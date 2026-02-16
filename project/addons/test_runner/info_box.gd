@@ -27,6 +27,7 @@ func set_title( new_title : String ) -> void:
 	label.clear()
 	label.append_text(new_title)
 
+
 func set_content(
 			border_color : Color,
 			icon : Texture2D,

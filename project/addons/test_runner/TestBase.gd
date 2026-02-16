@@ -2,6 +2,7 @@
 class_name TestBase extends EditorScript
 var cycleref: EditorScript
 
+
 #           ████ ███    ███ ██████   ██████  ██████  ████████ ███████          #
 #            ██  ████  ████ ██   ██ ██    ██ ██   ██    ██    ██               #
 #            ██  ██ ████ ██ ██████  ██    ██ ██████     ██    ███████          #
@@ -12,6 +13,7 @@ func                        _________IMPORTS_________              ()->void:pass
 const Shared = preload('scripts/shared.gd')
 const TestResult = Shared.TestResult
 const RetCode = Shared.RetCode
+
 
 #██████  ███████ ███████ ██ ███    ██ ██ ████████ ██  ██████  ███    ██ ███████#
 #██   ██ ██      ██      ██ ████   ██ ██    ██    ██ ██    ██ ████   ██ ██     #
@@ -25,6 +27,7 @@ const u32 = 2083138172				#= |**|
 const u32_ = 2084585596				#= |@@|
 const u64 = 8947009970309311100		#= |******|
 const u64_ = 8953226703912583292	#= |@@@@@@|
+
 
 # ██████  ██████   ██████  ██████  ███████ ██████  ████████ ██ ███████ ███████ #
 # ██   ██ ██   ██ ██    ██ ██   ██ ██      ██   ██    ██    ██ ██      ██      #
@@ -56,6 +59,7 @@ func _on_timer_timeout() -> void:
 	logp("[color=salmon]Error: Timeout was reached.[/color]")
 	test_finished.emit()
 
+
 #      ██████  ██    ██ ███████ ██████  ██████  ██ ██████  ███████ ███████     #
 #     ██    ██ ██    ██ ██      ██   ██ ██   ██ ██ ██   ██ ██      ██          #
 #     ██    ██ ██    ██ █████   ██████  ██████  ██ ██   ██ █████   ███████     #
@@ -67,8 +71,10 @@ func                        ________OVERRIDES________              ()->void:pass
 func _setup() -> Error:
 	return OK
 
+
 func _cleanup() -> Error:
 	return OK
+
 
 # This is the function to override in derived test functions.
 func _run_test() -> RetCode:
@@ -165,6 +171,7 @@ func run_test() -> void:
 	timer.queue_free()
 	test_finished.emit()
 
+
 func logd( msg : Variant = "" ) -> void:
 	if msg is Array:
 		var array : Array = msg
@@ -173,12 +180,14 @@ func logd( msg : Variant = "" ) -> void:
 		print_rich( msg )
 		output.append( msg )
 
+
 func logp( msg : Variant ) -> void:
 	if msg is Array:
 		var array : Array = msg
 		msg = array.reduce( Shared.reducer_to_lines )
 	if _debug or _verbose: print_rich( msg )
 	output.append( msg )
+
 
 func sbytes( bytes : PackedByteArray, cols : int = 8 ) -> String:
 	if bytes.is_empty(): return "Empty"
@@ -205,6 +214,7 @@ func sbytes( bytes : PackedByteArray, cols : int = 8 ) -> String:
 
 	return '\n'.join( retval )
 
+
 #                  ████████ ███████ ███████ ████████ ███████                   #
 #                     ██    ██      ██         ██    ██                        #
 #                     ██    █████   ███████    ██    ███████                   #
@@ -220,6 +230,7 @@ func TEST_EQ( want_v : Variant, got_v : Variant, desc : String = "" ) -> RetCode
 	output.append.call( msg )
 	if _verbose: print_rich( msg )
 	return RetCode.TEST_FAILED
+
 
 func TEST_APPROX( want_v : float, got_v : float, desc : String = "" ) -> RetCode:
 	if is_equal_approx(want_v, got_v):
@@ -239,6 +250,7 @@ func TEST_TRUE( value : Variant, desc : String = "" ) -> RetCode:
 	output.append.call( msg )
 	if _verbose: print_rich( msg )
 	return RetCode.TEST_FAILED
+
 
 func TEST_OP( val1 : Variant, op : int, val2 : Variant, desc : String = ""  ) -> RetCode:
 	var op_s : String

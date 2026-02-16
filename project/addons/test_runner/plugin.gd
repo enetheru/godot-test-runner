@@ -2,7 +2,8 @@
 extends EditorPlugin
 
 const MainPanel = preload('main_panel.tscn')
-const RUN_ALL = preload('res://addons/test_runner/res/run-all.svg')
+const CHECKLIST = preload('res://addons/test_runner/res/checklist.svg')
+
 var main_panel_instance : Control
 
 func _enter_tree() -> void:
@@ -32,4 +33,4 @@ func _get_plugin_name() -> String:
 
 
 func _get_plugin_icon() -> Texture2D:
-	return RUN_ALL
+	return CHECKLIST

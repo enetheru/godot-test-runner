@@ -24,12 +24,25 @@ const RetCode = Shared.RetCode
 const INFO_BOX = preload('info_box.tscn')
 
 # Resources
-const SKULL = preload('res://addons/test_runner/res/skull.svg')
+# Icons
+const DEBUG_RERUN = preload('res/debug-rerun.svg')
+const FILE_CODE = preload('res/file-code.svg')
+const FOLDER_OPEN = preload('res/folder-open.svg')
 
-const FLIP_TAILS = preload('res://addons/test_runner/res/flip_tails.svg')
-const FLIP_HEAD = preload('res://addons/test_runner/res/flip_head.svg')
-const FLIP_HALF = preload('res://addons/test_runner/res/flip_half.svg')
-const MEDAL = preload('res://addons/test_runner/res/medal.tres')
+const FLIP_TAILS = preload('res/flip_tails.svg')
+const FLIP_HEAD = preload('res/flip_head.svg')
+const FLIP_HALF = preload('res/flip_half.svg')
+
+const MEDAL = preload('res/medal.tres')
+const SKULL = preload('res/skull.svg')
+
+const color_OK = Color.DARK_GREEN
+const color_OK_bright = Color.GREEN_YELLOW
+const color_FAILURE = Color.DARK_RED
+const color_FAILURE_bright = Color.TOMATO
+const color_WARNING = Color.DARK_GOLDENROD
+const color_WARNING_bright = Color.GOLD
+const color_TEST = Color.HOT_PINK
 
 # ██████  ██████   ██████  ██████  ███████ ██████  ████████ ██ ███████ ███████ #
 # ██   ██ ██   ██ ██    ██ ██   ██ ██      ██   ██    ██    ██ ██      ██      #
@@ -37,11 +50,6 @@ const MEDAL = preload('res://addons/test_runner/res/medal.tres')
 # ██      ██   ██ ██    ██ ██      ██      ██   ██    ██    ██ ██           ██ #
 # ██      ██   ██  ██████  ██      ███████ ██   ██    ██    ██ ███████ ███████ #
 func                        ________PROPERTIES_______              ()->void:pass
-
-# Icons
-const DEBUG_RERUN = preload('res://addons/test_runner/res/debug-rerun.svg')
-const FILE_CODE = preload('res://addons/test_runner/res/file-code.svg')
-const FOLDER_OPEN = preload('res://addons/test_runner/res/folder-open.svg')
 
 # Top Row Left
 @onready var run_btn: Button = $Buttons/Left/Run
@@ -88,9 +96,11 @@ func                        __________EVENTS_________              ()->void:pass
 func _on_run_pressed() -> void:
 	process_selection()
 
+
 func _on_reload_pressed() -> void:
-	tests_tree.clear()
 	regenerate_tree()
+	# TODO, reload tests should have some effect on the results list
+
 
 func _on_filters_pressed() -> void:
 	pass # Replace with function body.
@@ -109,8 +119,10 @@ func _on_debug_toggled(toggled_on: bool) -> void:
 
 
 func _on_clear_results_pressed() -> void:
+	regenerate_tree()
 	for child in info_items.get_children():
 		child.call_deferred("queue_free")
+
 
 func _on_tests_tree_multi_selected(
 			item: TreeItem,
@@ -122,6 +134,7 @@ func _on_tests_tree_multi_selected(
 		@warning_ignore('return_value_discarded')
 		test_selection.erase(item)
 
+
 func _on_tests_tree_button_clicked(
 			item: TreeItem,
 			_column: int,
@@ -129,6 +142,7 @@ func _on_tests_tree_button_clicked(
 			_mouse_button_index: int
 			) -> void:
 	process_test(item)
+
 
 func _on_tests_tree_gui_input(event: InputEvent) -> void:
 	if not event is InputEventMouseButton: return
@@ -224,23 +238,9 @@ func update_stats() -> void:
 	stats_counter.add_text(", %d:" % results)
 	stats_counter.add_image(FLIP_HALF, 23)
 	stats_counter.add_text(", %d:" % failures)
-	stats_counter.add_image(FLIP_TAILS, 23, 23, Color.TOMATO)
+	stats_counter.add_image(FLIP_TAILS, 23, 23, color_FAILURE_bright)
 	stats_counter.add_text(", %d:" % successes)
-	stats_counter.add_image(FLIP_HEAD, 23, 23, Color.YELLOW_GREEN)
-
-	#add_image(
-	# image: Texture2D,
-	#  width: int = 0,
-	#  height: int = 0,
-	#  color: Color = Color(1, 1, 1, 1),
-	#  inline_align: InlineAlignment = 5,
-	#  region: Rect2 = Rect2(0, 0, 0, 0),
-	#  key: Variant = null,
-	#  pad: bool = false,
-	#  tooltip: String = "",
-	#  size_in_percent: bool = false)
-
-
+	stats_counter.add_image(FLIP_HEAD, 23, 23, color_OK_bright)
 	already_updating = false
 
 
@@ -285,6 +285,7 @@ func process_test( file_item : TreeItem ) -> void:
 	result.latest = info_box
 	result.retcode = RetCode.TEST_FAILED
 	result.output = ["Only Just Created"]
+	update_tree_item(file_item, "INPROGRESS", Color.REBECCA_PURPLE)
 
 	# Tests can be run three ways.
 	# 	1. Headless as EditorScript
@@ -298,8 +299,8 @@ func process_test( file_item : TreeItem ) -> void:
 			result.retcode = RetCode.TEST_FAILED
 			result.output = ["Re-Writing the script for in-game testing failed."]
 			info_text = result.output.reduce(Shared.reducer_to_lines)
-			set_tree_item_failed(file_item)
-			info_box.set_content( Color.DARK_RED, FLIP_TAILS, info_text)
+			update_tree_item(file_item, "FAILED" )
+			info_box.set_content( color_FAILURE, FLIP_TAILS, info_text)
 			return
 
 	# Load up the script and run the test
@@ -330,14 +331,14 @@ func process_test( file_item : TreeItem ) -> void:
 
 	# Update the tree_item
 	if result.retcode == RetCode.TEST_FAILED:
-		set_tree_item_failed(file_item)
-		info_box.set_content( Color.DARK_RED, FLIP_TAILS, info_text )
+		update_tree_item(file_item, "FAILED")
+		info_box.set_content( color_FAILURE, FLIP_TAILS, info_text )
 	elif 'warn' in info_text.to_lower():
-		set_tree_item_warning(file_item)
-		info_box.set_content( Color.DARK_GOLDENROD, FLIP_HALF, info_text )
+		update_tree_item(file_item, "WARNING" )
+		info_box.set_content( color_WARNING, FLIP_HALF, info_text )
 	else:
-		set_tree_item_success(file_item)
-		info_box.set_content( Color.SEA_GREEN, FLIP_HEAD, info_text )
+		update_tree_item(file_item, "OK" )
+		info_box.set_content( color_OK, FLIP_HEAD, info_text )
 	update_stats()
 
 
@@ -405,54 +406,46 @@ extends PlayBase\n"
 #                          ██    ██   ██ ███████ ███████                       #
 func                        __________TREE___________              ()->void:pass
 
-func set_tree_item_failed( item : TreeItem ) -> void:
-	item.set_text(1, "FAILURE")
-	item.set_custom_bg_color(0, Color.DARK_RED, false)
-	item.set_custom_bg_color(1, Color.DARK_RED, false)
-
-
-func set_tree_item_warning( item : TreeItem ) -> void:
-	item.set_text(1, "!")
-	item.set_custom_bg_color(0, Color.DARK_GOLDENROD, false)
-	item.set_custom_color(0, Color.DARK_SLATE_GRAY)
-	item.set_custom_bg_color(1, Color.DARK_GOLDENROD, false)
-	item.set_custom_color(1, Color.DARK_SLATE_GRAY)
-
-
-func set_tree_item_success( item : TreeItem ) -> void:
-	item.set_text(1, "OK")
-	item.set_custom_bg_color(0, Color.DARK_GREEN, false)
-	item.set_custom_bg_color(1, Color.DARK_GREEN, false)
-
-
 func add_action_row(
 			test_def : TestDef,
 			filename : String,
 			parent_item : TreeItem
 			) -> void:
 	var item : TreeItem = parent_item.create_child()
+	# Test Name
 	item.set_selectable(0, false )
 	item.set_metadata(0, test_def )
 	item.set_text( 0, filename )
 	# Result
 	item.set_text_alignment(1, HORIZONTAL_ALIGNMENT_CENTER)
 	item.set_selectable(1, false )
-	item.set_text(1, "PENDING")
+	item.set_text(1, "PENDING ")
+	item.set_expand_right(1, true)
+	item.set_text_overrun_behavior(1, TextServer.OVERRUN_NO_TRIMMING)
 	item.add_button(1, DEBUG_RERUN, -1, false, "[Re]Run Test Action" )
 	item.set_icon(0, FILE_CODE)
 
 
 func regenerate_tree() -> void:
-	tests_tree.clear()
-
 	# re-build the test dictionary
 	test_list = collect_tests( test_path )
 
+	# Clear the old tree
+	tests_tree.clear()
+
+	# Add the column headers
 	tests_tree.set_column_title(0, "TestElement")
-	tests_tree.set_column_title(1, "  Result  ")
-	#tests_tree.set_column_expand( 1, false)
+
+	tests_tree.set_column_title(1, "Result")
+	tests_tree.set_column_expand( 1, false)
+	#tests_tree.set_column_custom_minimum_width(1, 160)
+	# TODO Calculate the size based on the theme font and the maximum size.
+
+	# Add the root
 	var _top_item : TreeItem = tests_tree.create_item()
 	_top_item.set_text(0,"Tests")
+
+	# Add the rows
 	for test_def : TestDef in test_list:
 		# Add Folder name
 		var folder_item : TreeItem = tests_tree.create_item()
@@ -464,3 +457,24 @@ func regenerate_tree() -> void:
 			add_action_row( test_def, file, folder_item )
 
 	update_stats()
+
+
+func update_tree_item(
+			item : TreeItem,
+			label : String = "PENDING",
+			color : Color = color_TEST
+			) -> void:
+	item.set_text(1, label)
+	match label:
+		"PENDING" when color == color_TEST:
+			item.clear_custom_bg_color(0)
+			item.clear_custom_bg_color(1)
+		"FAILURE" when color == color_TEST:
+			item.set_custom_bg_color(0, color_FAILURE)
+			item.set_custom_bg_color(1, color_FAILURE)
+		"OK" when color == color_TEST:
+			item.set_custom_bg_color(0, color_OK)
+			item.set_custom_bg_color(1, color_OK)
+		_:
+			item.set_custom_bg_color(0, color)
+			item.set_custom_bg_color(1, color)
