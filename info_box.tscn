@@ -1,7 +1,7 @@
 [gd_scene load_steps=4 format=3 uid="uid://dt0eqt7nuorql"]
 
 [ext_resource type="Script" uid="uid://gli414sa5hot" path="res://addons/enetheru.test-runner/info_box.gd" id="1_hcdtn"]
-[ext_resource type="StyleBox" uid="uid://dys7tjax2dv0f" path="res://addons/enetheru.test-runner/res/info_style_box.tres" id="2_qxq4t"]
+[ext_resource type="StyleBox" uid="uid://dys7tjax2dv0f" path="res://addons/test_runner_old/info_style_box.tres" id="2_qxq4t"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_34uau"]
 content_margin_left = 2.0

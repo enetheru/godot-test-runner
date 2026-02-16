@@ -12,8 +12,8 @@ extends VBoxContainer
 func                        _________IMPORTS_________              ()->void:pass
 
 # Scripts
-const InfoBox = preload('info_box.gd')
-const Shared = preload('scripts/shared.gd')
+const InfoBox = preload('uid://gli414sa5hot')
+const Shared = preload('uid://ccrhkvl5ptefw')
 
 # Classes
 const TestDef = Shared.TestDef
@@ -21,20 +21,20 @@ const TestResult = Shared.TestResult
 const RetCode = Shared.RetCode
 
 # Scenes
-const INFO_BOX = preload('info_box.tscn')
+const INFO_BOX = preload('uid://dt0eqt7nuorql')
 
 # Resources
 # Icons
-const DEBUG_RERUN = preload('res/debug-rerun.svg')
-const FILE_CODE = preload('res/file-code.svg')
-const FOLDER_OPEN = preload('res/folder-open.svg')
+const DEBUG_RERUN = preload('uid://dvy1xigrytulx')
+const FILE_CODE = preload('uid://cvot4lpp8maag')
+const FOLDER_OPEN = preload('uid://cepxbj0ne0kkt')
 
-const FLIP_TAILS = preload('res/flip_tails.svg')
-const FLIP_HEAD = preload('res/flip_head.svg')
-const FLIP_HALF = preload('res/flip_half.svg')
+const FLIP_HALF = preload('uid://biv4nfodlftli')
+const FLIP_HEAD = preload('uid://35f3dwsmtyx3')
+const FLIP_TAILS = preload('uid://b7mrw71e2x5gx')
 
-const MEDAL = preload('res/medal.tres')
-const SKULL = preload('res/skull.svg')
+const MEDAL = preload('uid://buto46ta3chpg')
+const SKULL = preload('uid://bq1h8nwto0qun')
 
 const color_OK = Color.DARK_GREEN
 const color_OK_bright = Color.GREEN_YELLOW

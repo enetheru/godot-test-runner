@@ -56,3 +56,27 @@ func                        _________METHODS_________              ()->void:pass
 
 static func reducer_to_lines(a:String = "", v:Variant = null) -> String:
 	return (a + "\n%s" if a else "%s") % v
+
+static var folder_filter:Callable = func()->bool:return true
+static var test_script_filter:Callable = func()->bool:return true
+static var schema_file_filter:Callable = func()->bool:return true
+
+static func collect_tests( test_path : String ) -> Array[Dictionary]:
+	var tests : Array[Dictionary]
+
+	var folders : Array = DirAccess.get_directories_at(test_path)
+	var folder_paths = folders.map(func(folder : String): return "/".join([test_path,folder]))
+	folder_paths.sort()
+	for folder_path : String in folder_paths.filter( folder_filter ):
+		var files : Array = DirAccess.get_files_at( folder_path )
+		var folder = folder_path.get_file()
+
+		var test_dict : Dictionary = {
+			"name": folder.to_pascal_case(),
+			"folder_path": folder_path,
+			"test_scripts": files.filter( test_script_filter ),
+			"schema_files": files.filter( schema_file_filter )
+		}
+		tests.append( test_dict )
+
+	return tests

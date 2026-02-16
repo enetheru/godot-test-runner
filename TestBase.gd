@@ -36,13 +36,13 @@ const u64_ = 8953226703912583292	#= |@@@@@@|
 # ██      ██   ██  ██████  ██      ███████ ██   ██    ██    ██ ███████ ███████ #
 func                        ________PROPERTIES_______              ()->void:pass
 
-var scene_tree : SceneTree
+var scene_tree:SceneTree
 
-var _verbose : bool = true
-var _debug : bool = false
-var runcode : RetCode = RetCode.TEST_OK
-var output : Array = []
-var max_runtime_s : float = 3
+var _verbose:bool = true
+var _debug:bool = false
+var runcode:int = RetCode.TEST_OK
+var output:Array = []
+var max_runtime_s:float = 3
 
 
 #            ███████ ██  ██████  ███    ██  █████  ██      ███████             #
@@ -78,7 +78,7 @@ func _cleanup() -> Error:
 
 # This is the function to override in derived test functions.
 func _run_test() -> RetCode:
-	var msg : String = "This function needs to be overridden in a derived script."
+	var msg:String = "This function needs to be overridden in a derived script."
 	logp(msg)
 	assert(false, msg)
 	return RetCode.TEST_OK
@@ -119,7 +119,7 @@ func run_test() -> void:
 		"not usable in a threaded context.\n")
 
 	# Format Dictionary
-	var fd : Dictionary
+	var fd:Dictionary
 	scene_tree = EditorInterface.get_base_control().get_tree()
 
 	# An opportunity for derived scripts to set the maximum run time and other
@@ -132,11 +132,11 @@ func run_test() -> void:
 
 	# In case of failure of some unforseen way, I want to make sure the name
 	# of our timer node is unique
-	var script : Script = get_script()
-	var test_name : String = script.resource_path.validate_node_name()
+	var script:Script = get_script()
+	var test_name:String = script.resource_path.validate_node_name()
 
 	# Find, or create our timer.
-	var timer : Timer = scene_tree.root.find_child(test_name, false)
+	var timer:Timer = scene_tree.root.find_child(test_name, false)
 	if timer:
 		logd( "Error: Timer was not removed in last run.")
 		timer.queue_free()
@@ -172,33 +172,33 @@ func run_test() -> void:
 	test_finished.emit()
 
 
-func logd( msg : Variant = "" ) -> void:
+func logd( msg:Variant = "" ) -> void:
 	if msg is Array:
-		var array : Array = msg
+		var array:Array = msg
 		msg = array.reduce( Shared.reducer_to_lines )
 	if _debug:
 		print_rich( msg )
 		output.append( msg )
 
 
-func logp( msg : Variant ) -> void:
+func logp( msg:Variant ) -> void:
 	if msg is Array:
-		var array : Array = msg
+		var array:Array = msg
 		msg = array.reduce( Shared.reducer_to_lines )
 	if _debug or _verbose: print_rich( msg )
 	output.append( msg )
 
 
-func sbytes( bytes : PackedByteArray, cols : int = 8 ) -> String:
+func sbytes( bytes:PackedByteArray, cols:int = 8 ) -> String:
 	if bytes.is_empty(): return "Empty"
-	var retval : Array = ["size: %d" % bytes.size()]
+	var retval:Array = ["size: %d" % bytes.size()]
 	var position := 0
 	while true:
-		var slice : PackedByteArray = bytes.slice(position, position + cols)
+		var slice:PackedByteArray = bytes.slice(position, position + cols)
 		if not slice.size(): break
 
 		# new line
-		var line : String = ""
+		var line:String = ""
 		# Position
 		line += "%08X: " % position
 		# bytes as hex pairs
@@ -215,6 +215,9 @@ func sbytes( bytes : PackedByteArray, cols : int = 8 ) -> String:
 	return '\n'.join( retval )
 
 
+func bytes_view( bytes:PackedByteArray, cols:int = 8 ) -> String:
+	return sbytes(bytes, cols)
+
 #                  ████████ ███████ ███████ ████████ ███████                   #
 #                     ██    ██      ██         ██    ██                        #
 #                     ██    █████   ███████    ██    ███████                   #
@@ -222,19 +225,18 @@ func sbytes( bytes : PackedByteArray, cols : int = 8 ) -> String:
 #                     ██    ███████ ███████    ██    ███████                   #
 func                        __________TESTS__________              ()->void:pass
 
-func TEST_EQ( want_v : Variant, got_v : Variant, desc : String = "" ) -> RetCode:
-	if want_v == got_v:
-		logd("TEST_EQ('%s' == '%s'): %s" % [want_v, got_v, desc])
-		return RetCode.TEST_OK
+func TEST_EQ( want_v:Variant, got_v:Variant, desc:String = "" ) -> RetCode:
+	logd("TEST_EQ(want:'%s' == got:'%s'): %s" % [want_v, got_v, desc])
+	if want_v == got_v: return RetCode.TEST_OK
 	var msg := "[b][color=salmon]Failed: '%s'[/color][/b]\nwanted: '%s'\n   got: '%s'" % [desc, want_v, got_v ]
 	output.append.call( msg )
 	if _verbose: print_rich( msg )
 	return RetCode.TEST_FAILED
 
 
-func TEST_APPROX( want_v : float, got_v : float, desc : String = "" ) -> RetCode:
+func TEST_APPROX( want_v:float, got_v:float, desc:String = "" ) -> RetCode:
 	if is_equal_approx(want_v, got_v):
-		logd("TEST_APPROX('%s' ~= '%s'): %s" % [want_v, got_v, desc])
+		logd("TEST_APPROX(want:'%s' ~= got:'%s'): %s" % [want_v, got_v, desc])
 		return RetCode.TEST_OK
 	var msg := "[b][color=salmon]TEST_EQ Failed: '%s'[/color][/b]\nwanted: '%s'\n   got: '%s'" % [desc, want_v, got_v ]
 	output.append.call( msg )
@@ -242,19 +244,29 @@ func TEST_APPROX( want_v : float, got_v : float, desc : String = "" ) -> RetCode
 	return RetCode.TEST_FAILED
 
 
-func TEST_TRUE( value : Variant, desc : String = "" ) -> RetCode:
+func TEST_TRUE( value:Variant, desc:String = "" ) -> RetCode:
 	if value:
 		logd("TEST_TRUE('%s'): %s" % [value, desc])
 		return RetCode.TEST_OK
-	var msg : String = "[b][color=salmon]TEST_TRUE Failed: '%s'[/color][/b]\nwanted: true | value != (0 & null)\n   got: '%s'" % [desc, value ]
+	var msg:String = "[b][color=salmon]TEST_TRUE Failed: '%s'[/color][/b]\nwanted: true | value != (0 & null)\n   got: '%s'" % [desc, value ]
 	output.append.call( msg )
 	if _verbose: print_rich( msg )
 	return RetCode.TEST_FAILED
 
 
-func TEST_OP( val1 : Variant, op : int, val2 : Variant, desc : String = ""  ) -> RetCode:
-	var op_s : String
-	var op_result : bool = false
+func TEST_FALSE( value:Variant, desc:String = "" ) -> RetCode:
+	if not value:
+		logd("TEST_FALSE('%s'): %s" % [value, desc])
+		return RetCode.TEST_OK
+	var msg:String = "[b][color=salmon]TEST_FALSE Failed: '%s'[/color][/b]\nwanted: true | value != (0 & null)\n   got: '%s'" % [desc, value ]
+	output.append.call( msg )
+	if _verbose: print_rich( msg )
+	return RetCode.TEST_FAILED
+
+
+func TEST_OP( val1:Variant, op:int, val2:Variant, desc:String = ""  ) -> RetCode:
+	var op_s:String
+	var op_result:bool = false
 	match op:
 		OP_EQUAL:  op_s='==';  op_result = val1 == val2
 		OP_NOT_EQUAL: op_s='!='; op_result = val1 != val2
@@ -263,7 +275,7 @@ func TEST_OP( val1 : Variant, op : int, val2 : Variant, desc : String = ""  ) ->
 		OP_LESS_EQUAL: op_s='<='; op_result = val1 <= val2
 		OP_LESS:  op_s='<';  op_result = val1 < val2
 	if op_result: return RetCode.TEST_OK
-	var msg : String = "[b][color=salmon]TEST_OP Failed: '%s'[/color][/b]" % desc
+	var msg:String = "[b][color=salmon]TEST_OP Failed: '%s'[/color][/b]" % desc
 	msg += "\n\tOp: ('%s' %s '%s') is false" % [val1, op_s, val2]
 	output.append.call( msg )
 	if _verbose: print_rich( msg )
