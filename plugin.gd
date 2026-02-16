@@ -2,7 +2,7 @@
 extends EditorPlugin
 
 const MainPanel = preload('main_panel.tscn')
-const CHECKLIST = preload('res://addons/test_runner/res/checklist.svg')
+const CHECKLIST = preload('res/checklist.svg')
 
 var main_panel_instance : Control
 

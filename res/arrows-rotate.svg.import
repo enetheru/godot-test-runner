@@ -3,21 +3,23 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://d01oplwaw6wfh"
-path="res://.godot/imported/arrows-rotate.svg-0cc5d4e7b0b75f6de1136392e7a3bc7d.ctex"
+path="res://.godot/imported/arrows-rotate.svg-d24a9dc78a4313ec117b31121061d6df.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://addons/test_runner/res/arrows-rotate.svg"
-dest_files=["res://.godot/imported/arrows-rotate.svg-0cc5d4e7b0b75f6de1136392e7a3bc7d.ctex"]
+source_file="res://addons/enetheru.test-runner/res/arrows-rotate.svg"
+dest_files=["res://.godot/imported/arrows-rotate.svg-d24a9dc78a4313ec117b31121061d6df.ctex"]
 
 [params]
 
 compress/mode=0
 compress/high_quality=false
 compress/lossy_quality=0.7
+compress/uastc_level=0
+compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
 compress/normal_map=0
 compress/channel_pack=0
@@ -25,6 +27,10 @@ mipmaps/generate=false
 mipmaps/limit=-1
 roughness/mode=0
 roughness/src_normal=""
+process/channel_remap/red=0
+process/channel_remap/green=1
+process/channel_remap/blue=2
+process/channel_remap/alpha=3
 process/fix_alpha_border=true
 process/premult_alpha=false
 process/normal_map_invert_y=false
