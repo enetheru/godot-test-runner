@@ -4,11 +4,21 @@
 - [ ] Enable tests to register subtests and put them as sub items, with dependencies.
 	- [ ] just requires a static function overload to trigger the specification on scan.
 - [ ] button should have a debug re-run button.
+- [ ] separate clear results from right side
 
 ## Right Side Test Output
 - [ ] Make test element a foldable.
 - [ ] double click to open test script
+- [ ] clear succeeded
+- [ ] filter
+- [ ] diff two outputs
 
+## OutputBox
+- [ ] Put controls inside the box
+	- [ ] re-run
+	- [ ] clear others
+- [ ] Add field in the test for changing the title.
+- [ ] option to enable bbcode?
 ## Controls
 - [ ] It appears that filters, and folder do not mean anything.
 - [ ] icons in the middle are not readable I think that perhaps i can make a background tricolour fill for untested/good/bad

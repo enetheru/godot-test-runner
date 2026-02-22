@@ -231,6 +231,7 @@ func TEST_EQ( want_v:Variant, got_v:Variant, desc:String = "" ) -> RetCode:
 	var msg := "[b][color=salmon]Failed: '%s'[/color][/b]\nwanted: '%s'\n   got: '%s'" % [desc, want_v, got_v ]
 	output.append.call( msg )
 	if _verbose: print_rich( msg )
+	runcode &= RetCode.TEST_FAILED
 	return RetCode.TEST_FAILED
 
 
@@ -241,6 +242,7 @@ func TEST_APPROX( want_v:float, got_v:float, desc:String = "" ) -> RetCode:
 	var msg := "[b][color=salmon]TEST_EQ Failed: '%s'[/color][/b]\nwanted: '%s'\n   got: '%s'" % [desc, want_v, got_v ]
 	output.append.call( msg )
 	if _verbose: print_rich( msg )
+	runcode &= RetCode.TEST_FAILED
 	return RetCode.TEST_FAILED
 
 
@@ -251,6 +253,7 @@ func TEST_TRUE( value:Variant, desc:String = "" ) -> RetCode:
 	var msg:String = "[b][color=salmon]TEST_TRUE Failed: '%s'[/color][/b]\nwanted: true | value != (0 & null)\n   got: '%s'" % [desc, value ]
 	output.append.call( msg )
 	if _verbose: print_rich( msg )
+	runcode &= RetCode.TEST_FAILED
 	return RetCode.TEST_FAILED
 
 
@@ -258,9 +261,10 @@ func TEST_FALSE( value:Variant, desc:String = "" ) -> RetCode:
 	if not value:
 		logd("TEST_FALSE('%s'): %s" % [value, desc])
 		return RetCode.TEST_OK
-	var msg:String = "[b][color=salmon]TEST_FALSE Failed: '%s'[/color][/b]\nwanted: true | value != (0 & null)\n   got: '%s'" % [desc, value ]
+	var msg:String = "[b][color=salmon]TEST_FALSE Failed: '%s'[/color][/b]\nwanted: false | value == (0 & null)\n   got: '%s'" % [desc, value ]
 	output.append.call( msg )
 	if _verbose: print_rich( msg )
+	runcode &= RetCode.TEST_FAILED
 	return RetCode.TEST_FAILED
 
 
@@ -279,4 +283,5 @@ func TEST_OP( val1:Variant, op:int, val2:Variant, desc:String = ""  ) -> RetCode
 	msg += "\n\tOp: ('%s' %s '%s') is false" % [val1, op_s, val2]
 	output.append.call( msg )
 	if _verbose: print_rich( msg )
+	runcode &= RetCode.TEST_FAILED
 	return RetCode.TEST_FAILED

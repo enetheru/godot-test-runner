@@ -55,7 +55,8 @@ class TestResult extends RefCounted:
 func                        _________METHODS_________              ()->void:pass
 
 static func reducer_to_lines(a:String = "", v:Variant = null) -> String:
-	return (a + "\n%s" if a else "%s") % v
+	if a: return a + "\n" +  str(v)
+	return str(v)
 
 static var folder_filter:Callable = func()->bool:return true
 static var test_script_filter:Callable = func()->bool:return true
