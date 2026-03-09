@@ -12,6 +12,7 @@
 - [ ] clear succeeded
 - [ ] filter
 - [ ] diff two outputs
+- [ ] rerun failed
 
 ## OutputBox
 - [ ] Put controls inside the box
@@ -24,6 +25,7 @@
 - [ ] icons in the middle are not readable I think that perhaps i can make a background tricolour fill for untested/good/bad
 - [ ] nothing has tooltips
 - [ ] Help Button shows nothing.
+- [ ] Add a stop button somewhere for long running tests.
 
 ## Other
 - [ ] Project based settings would be nice

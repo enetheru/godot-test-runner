@@ -17,12 +17,15 @@ const InfoBox = preload('../info_box.gd')
 #                       ██████  ███████ ██      ███████                        #
 func                        __________DEFS___________              ()->void:pass
 
-#NOTE: When a function bails due to assert, or crash, it returns the default
-# value in the case of an integer that is 0, which unfortunately equates to OK
-# So unfortunately in this case we have to flip the expectation and not rely
-# on the builtin constants OK and FAILED
+## NOTE: When a function bails due to assert, or crash, it returns the default
+##  value in the case of an integer that is 0, which unfortunately equates to OK
+##  So unfortunately in this case we have to flip the expectation and not rely
+##  on the builtin constants OK and FAILED
 enum RetCode {
+	## TEST_FAILED = 0,
 	TEST_FAILED = 0,
+	
+	## TEST_OK = 1
 	TEST_OK = 1
 }
 
@@ -66,11 +69,13 @@ static func collect_tests( test_path : String ) -> Array[Dictionary]:
 	var tests : Array[Dictionary]
 
 	var folders : Array = DirAccess.get_directories_at(test_path)
-	var folder_paths = folders.map(func(folder : String): return "/".join([test_path,folder]))
+	var folder_paths:Array = folders.map(
+		func(folder : String) -> String:
+			return "/".join([test_path,folder]))
 	folder_paths.sort()
 	for folder_path : String in folder_paths.filter( folder_filter ):
 		var files : Array = DirAccess.get_files_at( folder_path )
-		var folder = folder_path.get_file()
+		var folder:String = folder_path.get_file()
 
 		var test_dict : Dictionary = {
 			"name": folder.to_pascal_case(),
