@@ -191,7 +191,7 @@ func logp( msg:Variant ) -> void:
 	output.append( msg )
 
 
-func sbytes( bytes:PackedByteArray, cols:int = 8 ) -> String:
+static func sbytes( bytes:PackedByteArray, cols:int = 8 ) -> String:
 	if bytes.is_empty(): return "Empty"
 	var retval:Array = ["size: %d" % bytes.size()]
 	var position := 0
@@ -217,7 +217,7 @@ func sbytes( bytes:PackedByteArray, cols:int = 8 ) -> String:
 	return '\n'.join( retval )
 
 
-func bytes_view( bytes:PackedByteArray, cols:int = 8 ) -> String:
+static func bytes_view( bytes:PackedByteArray, cols:int = 8 ) -> String:
 	return sbytes(bytes, cols)
 
 #                  ████████ ███████ ███████ ████████ ███████                   #
@@ -270,8 +270,8 @@ func TEST_TRUE_RET( value:Variant, desc:String = "" ) -> RetCode:
 	if _verbose: print_rich( msg )
 	runcode &= RetCode.TEST_FAILED
 	return RetCode.TEST_FAILED
-	
-	
+
+
 func TEST_TRUE( value:Variant, desc:String = "" ) -> void:
 	@warning_ignore("return_value_discarded")
 	TEST_TRUE_RET( value, desc )
