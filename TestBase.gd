@@ -31,6 +31,33 @@ const u32_: int = 2084585596				#= |@@|
 const u64: int = 8947009970309311100		#= |******|
 const u64_: int = 8953226703912583292	#= |@@@@@@|
 
+static var op_string:PackedStringArray = [
+	'==', #  0: OP_EQUAL - Equality operator (==).
+	'!=', #  1: OP_NOT_EQUAL - Inequality operator (!=).
+	'<',  #  2: OP_LESS - Less than operator (<).
+	'<=', #  3: OP_LESS_EQUAL - Less than or equal operator (<=).
+	'>',  #  4: OP_GREATER - Greater than operator (>).
+	'>=', #  5: OP_GREATER_EQUAL - Greater than or equal operator (>=).
+	'+',  #  6: OP_ADD - Addition operator (+).
+	'-',  #  7: OP_SUBTRACT - Subtraction operator (-).
+	'*',  #  8: OP_MULTIPLY - Multiplication operator (*).
+	'/',  #  9: OP_DIVIDE - Division operator (/).
+	'-',  # 10: OP_NEGATE - Unary negation operator (-).
+	'+',  # 11: OP_POSITIVE - Unary plus operator (+).
+	'%',  # 12: OP_MODULE - Remainder/modulo operator (%).
+	'**', # 13: OP_POWER - Power operator (**).
+	'<<', # 14: OP_SHIFT_LEFT - Left shift operator (<<).
+	'>>', # 15: OP_SHIFT_RIGHT - Right shift operator (>>).
+	'&',  # 16: OP_BIT_AND - Bitwise AND operator (&).
+	'|',  # 17: OP_BIT_OR - Bitwise OR operator (|).
+	'^',  # 18: OP_BIT_XOR - Bitwise XOR operator (^).
+	'~',  # 19: OP_BIT_NEGATE - Bitwise NOT operator (~).
+	'&&', # 20: OP_AND - Logical AND operator (and or &&).
+	'||', # 21: OP_OR - Logical OR operator (or or ||).
+	'',   # 22: OP_XOR - Logical XOR operator (not implemented in GDScript).
+	'!',  # 23: OP_NOT - Logical NOT operator (not or !).
+	'in', # 24: OP_IN - Logical IN operator (in).
+]
 
 # ██████  ██████   ██████  ██████  ███████ ██████  ████████ ██ ███████ ███████ #
 # ██   ██ ██   ██ ██    ██ ██   ██ ██      ██   ██    ██    ██ ██      ██      #
@@ -227,93 +254,121 @@ static func bytes_view( bytes:PackedByteArray, cols:int = 8 ) -> String:
 #                     ██    ███████ ███████    ██    ███████                   #
 func                        __________TESTS__________              ()->void:pass
 
-## Returns [enum RetCode] 1 on failure, and 0 on OK.
-func TEST_EQ_RET( want_v:Variant, got_v:Variant, desc:String = "" ) -> RetCode:
-	logd("TEST_EQ(want:'%s' == got:'%s'): %s" % [want_v, got_v, desc])
-	if want_v == got_v: return RetCode.TEST_OK
+# test is abstracted so that exceptions trigger a fail.
+func _test_eq( want_v:Variant, got_v:Variant, desc:String = "" ) -> bool:
+	if want_v == got_v: return true
 	var msg := "[b][color=salmon]Failed: '%s'[/color][/b]\nwanted: '%s'\n   got: '%s'" % [desc, want_v, got_v ]
 	output.append.call( msg )
 	if _verbose: print_rich( msg )
+	return false
+
+
+## Returns [enum RetCode] 1 on failure, and 0 on OK.
+func TEST_EQ_RET( want_v:Variant, got_v:Variant, desc:String = "" ) -> RetCode:
+	logd("TEST_EQ_RET(want:'%s' == got:'%s'): %s" % [want_v, got_v, desc])
+	if _test_eq(want_v, got_v, desc): return RetCode.TEST_OK
 	runcode &= RetCode.TEST_FAILED
 	return RetCode.TEST_FAILED
 
 
 func TEST_EQ( want_v:Variant, got_v:Variant, desc:String = "") -> void:
-	@warning_ignore("return_value_discarded")
-	TEST_EQ_RET(want_v, got_v, desc)
+	logd("TEST_EQ(want:'%s' == got:'%s'): %s" % [want_v, got_v, desc])
+	if _test_eq(want_v, got_v, desc): return
+	runcode &= RetCode.TEST_FAILED
+
+
+func _test_approx( want_v:float, got_v:float, desc:String = "" ) -> bool:
+	if is_equal_approx(want_v, got_v): return true
+	var msg := "[b][color=salmon]Failed: '%s'[/color][/b]\nwanted: '%s'\n   got: '%s'" % [desc, want_v, got_v ]
+	output.append.call( msg )
+	if _verbose: print_rich( msg )
+	return false
 
 
 ## Returns [enum RetCode] 1 on failure, and 0 on OK.
 func TEST_APPROX_RET( want_v:float, got_v:float, desc:String = "" ) -> RetCode:
-	if is_equal_approx(want_v, got_v):
-		logd("TEST_APPROX(want:'%s' ~= got:'%s'): %s" % [want_v, got_v, desc])
-		return RetCode.TEST_OK
-	var msg := "[b][color=salmon]TEST_EQ Failed: '%s'[/color][/b]\nwanted: '%s'\n   got: '%s'" % [desc, want_v, got_v ]
-	output.append.call( msg )
-	if _verbose: print_rich( msg )
+	logd("TEST_APPROX_RET(want:'%s' ~= got:'%s'): %s" % [want_v, got_v, desc])
+	if _test_approx(want_v, got_v, desc ): return RetCode.TEST_OK
 	runcode &= RetCode.TEST_FAILED
 	return RetCode.TEST_FAILED
 
 
 func TEST_APPROX( want_v:float, got_v:float, desc:String = "" ) -> void:
-	@warning_ignore("return_value_discarded")
-	TEST_APPROX_RET( want_v, got_v, desc)
+	logd("TEST_APPROX(want:'%s' ~= got:'%s'): %s" % [want_v, got_v, desc])
+	if _test_approx(want_v, got_v, desc ): return
+	runcode &= RetCode.TEST_FAILED
+
+
+func _test_true( value:Variant, desc:String = "" ) -> bool:
+	if value: return true
+	var msg:String = "[b][color=salmon]TEST_TRUE Failed: '%s'[/color][/b]\nwanted: true | value != (0 & null)\n   got: '%s'" % [desc, value ]
+	output.append.call( msg )
+	if _verbose: print_rich( msg )
+	return false
 
 
 ## Returns [enum RetCode] 1 on failure, and 0 on OK.
 func TEST_TRUE_RET( value:Variant, desc:String = "" ) -> RetCode:
-	if value:
-		logd("TEST_TRUE('%s'): %s" % [value, desc])
-		return RetCode.TEST_OK
-	var msg:String = "[b][color=salmon]TEST_TRUE Failed: '%s'[/color][/b]\nwanted: true | value != (0 & null)\n   got: '%s'" % [desc, value ]
-	output.append.call( msg )
-	if _verbose: print_rich( msg )
+	logd("TEST_TRUE_RET('%s'): %s" % [value, desc])
+	if _test_true( value, desc ): return RetCode.TEST_OK
 	runcode &= RetCode.TEST_FAILED
 	return RetCode.TEST_FAILED
 
 
 func TEST_TRUE( value:Variant, desc:String = "" ) -> void:
-	@warning_ignore("return_value_discarded")
-	TEST_TRUE_RET( value, desc )
+	logd("TEST_TRUE('%s'): %s" % [value, desc])
+	if _test_true( value, desc ): return
+	runcode &= RetCode.TEST_FAILED
+
+
+func _test_false( value:Variant, desc:String = "" ) -> bool:
+	if not value: return true
+	var msg:String = "[b][color=salmon]TEST_FALSE Failed: '%s'[/color][/b]\nwanted: false | value == (0 & null)\n   got: '%s'" % [desc, value ]
+	output.append.call( msg )
+	if _verbose: print_rich( msg )
+	return false
 
 
 ## Returns [enum RetCode] 1 on failure, and 0 on OK.
 func TEST_FALSE_RET( value:Variant, desc:String = "" ) -> RetCode:
-	if not value:
-		logd("TEST_FALSE('%s'): %s" % [value, desc])
-		return RetCode.TEST_OK
-	var msg:String = "[b][color=salmon]TEST_FALSE Failed: '%s'[/color][/b]\nwanted: false | value == (0 & null)\n   got: '%s'" % [desc, value ]
-	output.append.call( msg )
-	if _verbose: print_rich( msg )
+	logd("TEST_FALSE_RET('%s'): %s" % [value, desc])
+	if _test_true( value, desc ): return RetCode.TEST_OK
 	runcode &= RetCode.TEST_FAILED
 	return RetCode.TEST_FAILED
 
 
 func TEST_FALSE( value:Variant, desc:String = "" ) -> void:
-	@warning_ignore("return_value_discarded")
-	TEST_FALSE_RET( value, desc )
+	logd("TEST_FALSE('%s'): %s" % [value, desc])
+	if _test_true( value, desc ): return
+	runcode &= RetCode.TEST_FAILED
+
+
+func _test_op( val1:Variant, op:int, val2:Variant, desc:String = ""  ) -> bool:
+	var op_result:bool = false
+	match op:
+		OP_EQUAL: op_result = val1 == val2
+		OP_NOT_EQUAL: op_result = val1 != val2
+		OP_GREATER_EQUAL: op_result = val1 >= val2
+		OP_GREATER: op_result = val1 > val2
+		OP_LESS_EQUAL: op_result = val1 <= val2
+		OP_LESS: op_result = val1 < val2
+	if op_result: return true
+	var msg:String = "[b][color=salmon]TEST_OP Failed: '%s'[/color][/b]" % desc
+	msg += "\n\tOp: ('%s' %s '%s') is false" % [val1, op_string[op], val2]
+	output.append.call( msg )
+	if _verbose: print_rich( msg )
+	return false
 
 
 ## Returns [enum RetCode] 1 on failure, and 0 on OK.
 func TEST_OP_RET( val1:Variant, op:int, val2:Variant, desc:String = ""  ) -> RetCode:
-	var op_s:String
-	var op_result:bool = false
-	match op:
-		OP_EQUAL:  op_s='==';  op_result = val1 == val2
-		OP_NOT_EQUAL: op_s='!='; op_result = val1 != val2
-		OP_GREATER_EQUAL: op_s='>='; op_result = val1 >= val2
-		OP_GREATER:  op_s='>';  op_result = val1 > val2
-		OP_LESS_EQUAL: op_s='<='; op_result = val1 <= val2
-		OP_LESS:  op_s='<';  op_result = val1 < val2
-	if op_result: return RetCode.TEST_OK
-	var msg:String = "[b][color=salmon]TEST_OP Failed: '%s'[/color][/b]" % desc
-	msg += "\n\tOp: ('%s' %s '%s') is false" % [val1, op_s, val2]
-	output.append.call( msg )
-	if _verbose: print_rich( msg )
+	logd("TEST_OP_RET('%s', %s, '%s'): %s" % [val1, op_string[op], val2, desc])
+	if _test_op(val1, op, val2, desc): return RetCode.TEST_OK
 	runcode &= RetCode.TEST_FAILED
 	return RetCode.TEST_FAILED
 
 
 func TEST_OP( val1:Variant, op:int, val2:Variant, desc:String = ""  ) -> void:
-	@warning_ignore("return_value_discarded")
-	TEST_OP_RET( val1, op, val2, desc)
+	logd("TEST_OP('%s', %s, '%s'): %s" % [val1, op_string[op], val2, desc])
+	if _test_op(val1, op, val2, desc): return
+	runcode &= RetCode.TEST_FAILED
