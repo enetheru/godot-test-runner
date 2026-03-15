@@ -257,13 +257,16 @@ func                        __________TESTS__________              ()->void:pass
 # test is abstracted so that exceptions trigger a fail.
 func _test_eq( want_v:Variant, got_v:Variant, desc:String = "" ) -> bool:
 	if want_v == got_v: return true
-	var msg := "[b][color=salmon]Failed: '%s'[/color][/b]\nwanted: '%s'\n   got: '%s'" % [desc, want_v, got_v ]
+	var msg:String = '\n'.join([
+		"[b][color=salmon]%s: '%s'[/color][/b]" % [Shared.get_call_site(3), desc],
+		"\twanted: '%s' == got: '%s'" % [want_v, got_v ]])
+	# TODO add the call_site to the error message.
 	output.append.call( msg )
 	if _verbose: print_rich( msg )
 	return false
 
 
-## Returns [enum RetCode] 1 on failure, and 0 on OK.
+## Returns [enum RetCode] 0(TEST_FAILED) on failure, and 1(TEST_OK) on Success.
 func TEST_EQ_RET( want_v:Variant, got_v:Variant, desc:String = "" ) -> RetCode:
 	logd("TEST_EQ_RET(want:'%s' == got:'%s'): %s" % [want_v, got_v, desc])
 	if _test_eq(want_v, got_v, desc): return RetCode.TEST_OK
@@ -279,13 +282,15 @@ func TEST_EQ( want_v:Variant, got_v:Variant, desc:String = "") -> void:
 
 func _test_approx( want_v:float, got_v:float, desc:String = "" ) -> bool:
 	if is_equal_approx(want_v, got_v): return true
-	var msg := "[b][color=salmon]Failed: '%s'[/color][/b]\nwanted: '%s'\n   got: '%s'" % [desc, want_v, got_v ]
+	var msg:String = '\n'.join([
+		"[b][color=salmon]%s: '%s'[/color][/b]" % [Shared.get_call_site(3), desc],
+		"\twanted: '%s' ~= got: '%s'" % [want_v, got_v ]])
 	output.append.call( msg )
 	if _verbose: print_rich( msg )
 	return false
 
 
-## Returns [enum RetCode] 1 on failure, and 0 on OK.
+## Returns [enum RetCode] 0(TEST_FAILED) on failure, and 1(TEST_OK) on Success.
 func TEST_APPROX_RET( want_v:float, got_v:float, desc:String = "" ) -> RetCode:
 	logd("TEST_APPROX_RET(want:'%s' ~= got:'%s'): %s" % [want_v, got_v, desc])
 	if _test_approx(want_v, got_v, desc ): return RetCode.TEST_OK
@@ -301,13 +306,16 @@ func TEST_APPROX( want_v:float, got_v:float, desc:String = "" ) -> void:
 
 func _test_true( value:Variant, desc:String = "" ) -> bool:
 	if value: return true
-	var msg:String = "[b][color=salmon]TEST_TRUE Failed: '%s'[/color][/b]\nwanted: true | value != (0 & null)\n   got: '%s'" % [desc, value ]
+	var msg:String = '\n'.join([
+		"[b][color=salmon]%s: '%s'[/color][/b]" % [Shared.get_call_site(3), desc],
+		"\twanted: true | value != (0 & null)",
+		"\tgot: '%s'" % value])
 	output.append.call( msg )
 	if _verbose: print_rich( msg )
 	return false
 
 
-## Returns [enum RetCode] 1 on failure, and 0 on OK.
+## Returns [enum RetCode] 0(TEST_FAILED) on failure, and 1(TEST_OK) on Success.
 func TEST_TRUE_RET( value:Variant, desc:String = "" ) -> RetCode:
 	logd("TEST_TRUE_RET('%s'): %s" % [value, desc])
 	if _test_true( value, desc ): return RetCode.TEST_OK
@@ -323,23 +331,26 @@ func TEST_TRUE( value:Variant, desc:String = "" ) -> void:
 
 func _test_false( value:Variant, desc:String = "" ) -> bool:
 	if not value: return true
-	var msg:String = "[b][color=salmon]TEST_FALSE Failed: '%s'[/color][/b]\nwanted: false | value == (0 & null)\n   got: '%s'" % [desc, value ]
+	var msg:String = '\n'.join([
+		"[b][color=salmon]%s: '%s'[/color][/b]" % [Shared.get_call_site(3), desc],
+		"\twanted: false | value == (0 & null)",
+		"\tgot: '%s'" % value])
 	output.append.call( msg )
 	if _verbose: print_rich( msg )
 	return false
 
 
-## Returns [enum RetCode] 1 on failure, and 0 on OK.
+## Returns [enum RetCode] 0(TEST_FAILED) on failure, and 1(TEST_OK) on Success.
 func TEST_FALSE_RET( value:Variant, desc:String = "" ) -> RetCode:
 	logd("TEST_FALSE_RET('%s'): %s" % [value, desc])
-	if _test_true( value, desc ): return RetCode.TEST_OK
+	if _test_false( value, desc ): return RetCode.TEST_OK
 	runcode &= RetCode.TEST_FAILED
 	return RetCode.TEST_FAILED
 
 
 func TEST_FALSE( value:Variant, desc:String = "" ) -> void:
 	logd("TEST_FALSE('%s'): %s" % [value, desc])
-	if _test_true( value, desc ): return
+	if _test_false( value, desc ): return
 	runcode &= RetCode.TEST_FAILED
 
 
@@ -353,14 +364,16 @@ func _test_op( val1:Variant, op:int, val2:Variant, desc:String = ""  ) -> bool:
 		OP_LESS_EQUAL: op_result = val1 <= val2
 		OP_LESS: op_result = val1 < val2
 	if op_result: return true
-	var msg:String = "[b][color=salmon]TEST_OP Failed: '%s'[/color][/b]" % desc
-	msg += "\n\tOp: ('%s' %s '%s') is false" % [val1, op_string[op], val2]
+
+	var msg:String = '\n'.join([
+		"[b][color=salmon]%s: '%s'[/color][/b]" % [Shared.get_call_site(3), desc],
+		"\tOp: ('%s' %s '%s') is false" % [val1, op_string[op], val2]])
 	output.append.call( msg )
 	if _verbose: print_rich( msg )
 	return false
 
 
-## Returns [enum RetCode] 1 on failure, and 0 on OK.
+## Returns [enum RetCode] 0(TEST_FAILED) on failure, and 1(TEST_OK) on Success.
 func TEST_OP_RET( val1:Variant, op:int, val2:Variant, desc:String = ""  ) -> RetCode:
 	logd("TEST_OP_RET('%s', %s, '%s'): %s" % [val1, op_string[op], val2, desc])
 	if _test_op(val1, op, val2, desc): return RetCode.TEST_OK

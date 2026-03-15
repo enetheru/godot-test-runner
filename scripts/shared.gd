@@ -24,7 +24,7 @@ func                        __________DEFS___________              ()->void:pass
 enum RetCode {
 	## TEST_FAILED = 0,
 	TEST_FAILED = 0,
-	
+
 	## TEST_OK = 1
 	TEST_OK = 1
 }
@@ -86,3 +86,10 @@ static func collect_tests( test_path : String ) -> Array[Dictionary]:
 		tests.append( test_dict )
 
 	return tests
+
+
+## returns a bbcode string url to the source location at [param depth].
+static func get_call_site(depth:int = 1) -> String:
+	var stack:Array = get_stack()
+	var frame:Dictionary = stack[mini(stack.size(), depth)]
+	return "[url='{source}:{line}']{source}:{line}:{function}()[/url]".format(frame)
