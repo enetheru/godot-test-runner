@@ -85,9 +85,11 @@ func                        _________SIGNALS_________              ()->void:pass
 signal test_finished
 
 func _on_timer_timeout() -> void:
+	timer.stop()
 	runcode = RetCode.TEST_FAILED
 	logp("[color=salmon]Error: Timeout was reached.[/color]")
 	test_finished.emit()
+
 
 
 #      ██████  ██    ██ ███████ ██████  ██████  ██ ██████  ███████ ███████     #

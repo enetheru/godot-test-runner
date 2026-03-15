@@ -34,6 +34,19 @@ func _cleanup() -> Error:
 # This test should Succeed
 func _run_test() -> int:
 	TEST_EQ( 1, 1, "Testing EQUAL")
+	TEST_EQ( 1, 0, "Testing EQUAL")
+
+	if TEST_EQ_RET(1,0, "Test with return"):
+		print("TEST_EQ_RET(1,0)")
+
+	if TEST_EQ_RET(1,1, "Test with return"):
+		print("TEST_EQ_RET(1,1)")
+
+	var a:Array = [1]
+	var b:PackedInt64Array = [1]
+	if TEST_EQ_RET(a,b,"Testing Equal Types Failure Case"):
+		print("Array == PackedInt64Array")
+
 
 	TEST_APPROX(1.1,1.1,"Testing APPROX")
 
@@ -48,7 +61,7 @@ func _run_test() -> int:
 	TEST_OP( 1, OP_LESS_EQUAL, 1, "Testing OP_LESS_EQUAL = true")
 	TEST_OP( 0, OP_LESS, 1, "Testing OP_LESS = true")
 
-	# This will spit errors, but the test will succeed.
+	# Test Failures
 	TEST_OP( 1, OP_EQUAL, 0, "Testing OP_EQUAL = false")
 	TEST_OP( 1, OP_NOT_EQUAL, 1, "Testing OP_NOT_EQUAL = false")
 	TEST_OP( 0, OP_GREATER_EQUAL, 1, "Testing OP_GREATER_EQUAL = false")
