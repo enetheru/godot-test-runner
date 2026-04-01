@@ -151,7 +151,16 @@ func run_test() -> void:
 
 	# Format Dictionary
 	var fd:Dictionary
-	scene_tree = EditorInterface.get_base_control().get_tree()
+	if scene_tree == null:
+		if Engine.is_editor_hint() and DisplayServer.get_name().to_lower() != "headless":
+			var base = EditorInterface.get_base_control()
+			if base:
+				scene_tree = base.get_tree()
+
+		if scene_tree == null:
+			var loop = Engine.get_main_loop()
+			if loop is SceneTree:
+				scene_tree = loop
 
 	# An opportunity for derived scripts to set the maximum run time and other
 	# variables.
