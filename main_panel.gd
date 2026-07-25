@@ -79,6 +79,8 @@ var test_list : Array[TestDef]
 var test_selection : Dictionary = {}
 var test_verbose : bool = false
 var test_debug : bool = false
+## Optional headless service (Command Server). UI still owns Tree/InfoBoxes.
+var _service : Node = null
 
 # Configuration
 var test_path : String = 'res://tests'
@@ -93,11 +95,20 @@ var test_folder_filter : Callable = default_folder_filter
 #             ███████   ████   ███████ ██   ████    ██    ███████              #
 func                        __________EVENTS_________              ()->void:pass
 
+func bind_service( svc:Node ) -> void:
+	_service = svc
+	if is_instance_valid( _service ):
+		if _service.has_method( &"set_flags" ):
+			_service.call( &"set_flags", test_verbose, test_debug )
+
+
 func _on_run_pressed() -> void:
 	process_selection()
 
 
 func _on_reload_pressed() -> void:
+	if is_instance_valid( _service ) and _service.has_method( &"reload" ):
+		_service.call( &"reload" )
 	regenerate_tree()
 	# TODO, reload tests should have some effect on the results list
 
@@ -112,16 +123,28 @@ func _on_folder_pressed() -> void:
 
 func _on_verbose_toggled(toggled_on: bool) -> void:
 	test_verbose = toggled_on
+	if is_instance_valid( _service ) and _service.has_method( &"set_verbose" ):
+		_service.call( &"set_verbose", toggled_on )
 
 
 func _on_debug_toggled(toggled_on: bool) -> void:
 	test_debug = toggled_on
+	if is_instance_valid( _service ) and _service.has_method( &"set_debug" ):
+		_service.call( &"set_debug", toggled_on )
 
 
 func _on_clear_results_pressed() -> void:
+	clear_results_ui()
+
+
+## Clear InfoBoxes + tree status; also clears service last-results when bound.
+func clear_results_ui() -> void:
+	if is_instance_valid( _service ) and _service.has_method( &"clear_results" ):
+		_service.call( &"clear_results" )
 	regenerate_tree()
-	for child in info_items.get_children():
-		child.call_deferred("queue_free")
+	if info_items:
+		for child in info_items.get_children():
+			child.call_deferred( "queue_free" )
 
 
 func _on_tests_tree_multi_selected(
