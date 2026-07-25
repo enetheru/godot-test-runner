@@ -74,6 +74,11 @@ var runcode:int = RetCode.TEST_OK
 var output:Array = []
 var max_runtime_s:float = 3
 var timer:Timer
+## True after [signal test_finished] for this run (timeout or normal complete).
+## Makes [method run_test] return on max-runtime even if `_run_test` is stuck.
+var _finished_emitted:bool = false
+## Max-runtime timer won the race; late `_run_test` completion is ignored.
+var _timed_out:bool = false
 
 #            ███████ ██  ██████  ███    ██  █████  ██      ███████             #
 #            ██      ██ ██       ████   ██ ██   ██ ██      ██                  #
@@ -85,10 +90,12 @@ func                        _________SIGNALS_________              ()->void:pass
 signal test_finished
 
 func _on_timer_timeout() -> void:
-	timer.stop()
+	if _finished_emitted:
+		return
+	_timed_out = true
 	runcode = RetCode.TEST_FAILED
 	logp("[color=salmon]Error: Timeout was reached.[/color]")
-	test_finished.emit()
+	_finish_run()
 
 
 
@@ -149,25 +156,37 @@ func run_test() -> void:
 		"TestBase relies on the 'await' keyword and functionality which is." + \
 		"not usable in a threaded context.\n")
 
+	_finished_emitted = false
+	_timed_out = false
+
 	# Format Dictionary
 	var fd:Dictionary
 	if scene_tree == null:
 		if Engine.is_editor_hint() and DisplayServer.get_name().to_lower() != "headless":
-			var base = EditorInterface.get_base_control()
+			var base:Object = EditorInterface.get_base_control()
 			if base:
-				scene_tree = base.get_tree()
+				scene_tree = base.call(&'get_tree')
 
 		if scene_tree == null:
-			var loop = Engine.get_main_loop()
+			var loop:MainLoop = Engine.get_main_loop()
 			if loop is SceneTree:
 				scene_tree = loop
+
+	if scene_tree == null:
+		runcode = RetCode.TEST_FAILED
+		fd = {'color':'tomato', 'msg':'no SceneTree'}
+		logp("[color={color}][b]_run() - {msg}[/b][/color]".format(fd) )
+		_finish_run()
+		return
 
 	# An opportunity for derived scripts to set the maximum run time and other
 	# variables.
 	@warning_ignore('redundant_await')
 	if await _setup() != OK:
+		runcode = RetCode.TEST_FAILED
 		fd = {'color':'tomato', 'msg':'_setup() - FAILED'}
 		logp("[color={color}][b]_run() - {msg}[/b][/color]".format(fd) )
+		_finish_run()
 		return
 
 	# In case of failure of some unforseen way, I want to make sure the name
@@ -176,10 +195,10 @@ func run_test() -> void:
 	var test_name:String = script.resource_path.validate_node_name()
 
 	# Find, or create our timer.
-	timer = scene_tree.root.find_child(test_name, false)
-	if timer:
+	var old_timer:Node = scene_tree.root.find_child(test_name, false)
+	if old_timer:
 		logd( "Error: Timer was not removed in last run.")
-		timer.queue_free()
+		old_timer.queue_free()
 
 	timer = Timer.new()
 	timer.name = test_name
@@ -187,13 +206,26 @@ func run_test() -> void:
 	@warning_ignore('return_value_discarded')
 	timer.timeout.connect( _on_timer_timeout )
 
-	# Start the timer, and call the test function and await its finish.
+	# Wall-clock cap. Fires [signal test_finished] so UI / TESTS_RUN / _run
+	# unblock even when `_run_test` is stuck (never-emitted signal, etc.).
 	timer.start(max_runtime_s)
 
-	@warning_ignore('redundant_await')
-	runcode = await _run_test()
+	# Body is a sibling coroutine; this function only waits for finish.
+	_run_test_body.call_deferred()
+	await test_finished
 
-		# printing output.
+
+## Runs `_run_test` + cleanup. No-op tail if max-runtime already finished.
+func _run_test_body() -> void:
+	@warning_ignore('redundant_await')
+	var code:int = await _run_test()
+
+	if _finished_emitted or _timed_out:
+		# Timeout already reported; abandon late completion.
+		return
+
+	runcode = code
+	var fd:Dictionary
 	if runcode == RetCode.TEST_OK:
 		fd = {'color':'yellowgreen', 'msg':'OK'}
 	else:
@@ -203,12 +235,27 @@ func run_test() -> void:
 	if _verbose or _debug:
 		output.reduce(Shared.reducer_to_lines)
 
-	# Cleanup after ourselves.
 	@warning_ignore('redundant_await')
 	if await _cleanup() != OK:
 		fd = {'color':'tomato', 'msg':'_cleanup() - FAILED'}
 		logp("[color={color}][b]_run() - {msg}[/b][/color]".format(fd) )
-	timer.queue_free()
+		if runcode == RetCode.TEST_OK:
+			runcode = RetCode.TEST_FAILED
+
+	if _finished_emitted or _timed_out:
+		return
+	_finish_run()
+
+
+func _finish_run() -> void:
+	if _finished_emitted:
+		return
+	_finished_emitted = true
+	if is_instance_valid(timer):
+		if not timer.is_stopped():
+			timer.stop()
+		timer.queue_free()
+		timer = null
 	test_finished.emit()
 
 
