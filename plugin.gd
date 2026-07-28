@@ -71,7 +71,8 @@ func _register_with_command_server() -> void:
 		)
 		return
 
-	var cmd_dir:String = get_script().resource_path.get_base_dir().path_join(
+	var rpath:String = get_script().resource_path
+	var cmd_dir:String = rpath.get_base_dir().path_join(
 			"command_server"
 	)
 	var added:int = cs.call( &"register_commands_from_path", cmd_dir, CS_OWNER )
@@ -79,6 +80,7 @@ func _register_with_command_server() -> void:
 	if cs.has_signal( &"commands_reloaded" ):
 		_cs_reloaded_cb = _on_command_server_reloaded
 		if not cs.is_connected( &"commands_reloaded", _cs_reloaded_cb ):
+			@warning_ignore("return_value_discarded")
 			cs.connect( &"commands_reloaded", _cs_reloaded_cb )
 	print( "TestRunner: registered %d command(s) with Command Server" % added )
 
@@ -106,7 +108,7 @@ func _find_command_server() -> EditorPlugin:
 	if helper != null and helper.has_method( &"get_command_server_plugin" ):
 		var found:Variant = helper.call( &"get_command_server_plugin" )
 		if found is EditorPlugin:
-			return found as EditorPlugin
+			return found
 	var base:Control = EditorInterface.get_base_control()
 	if base == null:
 		return null

@@ -25,15 +25,16 @@ func execute( _args:String, _context:Dictionary ) -> String:
 	# Best-effort: refresh panel tree if present.
 	var plugin:EditorPlugin = Common.find_test_runner_plugin()
 	if plugin != null and plugin.get( "main_panel_instance" ) != null:
-		var panel:Variant = plugin.get( "main_panel_instance" )
-		if panel is Object and ( panel as Object ).has_method( &"regenerate_tree" ):
-			( panel as Object ).call( &"regenerate_tree" )
-	var list:Variant = svc.call( &"list_tests" )
+		var panel:Object = plugin.get( "main_panel_instance" )
+		if panel.has_method( &"regenerate_tree" ):
+			panel.call( &"regenerate_tree" )
+	var list:Array = svc.call( &"list_tests" )
 	var n_groups:int = 0
 	var n_scripts:int = 0
-	if list is Array:
-		n_groups = ( list as Array ).size()
-		for g:Variant in list:
-			if g is Dictionary:
-				n_scripts += ( g as Dictionary ).get( "scripts", [] ).size()
+	n_groups = list.size()
+	for g:Variant in list:
+		if g is Dictionary:
+			var gd:Dictionary = g
+			var scripts:Array = gd.get( "scripts", [] )
+			n_scripts += scripts.size()
 	return "OK: reloaded groups=%d scripts=%d" % [n_groups, n_scripts]

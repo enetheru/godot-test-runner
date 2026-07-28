@@ -16,7 +16,7 @@ func _run() -> void:
 	for test_def : Dictionary in def_list:
 		for schema_file : String in test_def.get('schema_files', []):
 			var category = test_def.get('name')
-			var schema_path = '/'.join([test_def.get('folder_path'), schema_file])
+			var schema_path:String = '/'.join([test_def.get('folder_path'), schema_file])
 			var key : String = '/'.join([category,schema_file])
 			var result : Dictionary = {} # STUB this was where it was getting results from.
 			if result.get('retcode'):
@@ -31,7 +31,7 @@ func _run() -> void:
 	for test_def : Dictionary in def_list:
 		for script_file : String in test_def.get('test_scripts', []):
 			var category = test_def.get('name')
-			var script_path = '/'.join([test_def.get('folder_path'), script_file])
+			var script_path:String = '/'.join([test_def.get('folder_path'), script_file])
 			var key : String = '/'.join([category,script_file])
 
 			var thread := Thread.new()
@@ -53,13 +53,13 @@ func run_test( file_path : String ) -> Dictionary:
 		result['retcode'] = FAILED
 		result['output'] = ["Cannot instantiate '%s'" % file_path ]
 		return result
-	var instance = script.new()
+	var instance:TestBase = script.new()
 	instance._run()
 	result['retcode'] = instance.retcode
 	result['output'] = instance.output
 	return result
 
-func print_compile_results( results : Dictionary ):
+func print_compile_results( results : Dictionary ) -> void:
 	var rich_text : String = "\n[b]== Compile Results ==[/b]\n"
 	rich_text += "[table=3]"
 	for key in results:
@@ -72,7 +72,7 @@ func print_compile_results( results : Dictionary ):
 	print_rich( rich_text )
 
 
-func print_test_results( results : Dictionary ):
+func print_test_results( results : Dictionary ) -> void:
 	var rich_text : String = "\n[b]== Test Results ==[/b]\n"
 	var compilation : PackedStringArray = []
 	for key in results:
@@ -83,14 +83,14 @@ func print_test_results( results : Dictionary ):
 	rich_text += compile_rich_table( compilation, 3 )
 	print_rich( rich_text )
 
-func compile_rich_table( data : PackedStringArray, stride : int ):
+func compile_rich_table( data : PackedStringArray, stride : int ) -> String:
 	var rich_text : String = "[table=%s]" % stride
 	for string in data:
 		rich_text += "[cell]%s[/cell]" % string
 	rich_text += "[/table]"
 	return rich_text
 
-func print_result_error( result : Dictionary ):
+func print_result_error( result : Dictionary ) -> void:
 	var output = result.get('output')
 	result.erase('output')
 	printerr( "result: ", JSON.stringify( result, '\t', false ) )

@@ -22,9 +22,9 @@ func execute( _args:String, _context:Dictionary ) -> String:
 		return str( req[&"error"] )
 	var plugin:EditorPlugin = Common.find_test_runner_plugin()
 	if plugin != null and plugin.get( "main_panel_instance" ) != null:
-		var panel:Variant = plugin.get( "main_panel_instance" )
-		if panel is Object and ( panel as Object ).has_method( &"clear_results_ui" ):
-			( panel as Object ).call( &"clear_results_ui" )
+		var panel:Object = plugin.get( "main_panel_instance" )
+		if panel.has_method( &"clear_results_ui" ):
+			panel.call( &"clear_results_ui" )
 			return "OK: results cleared"
 	# Panel not ready — clear service only.
 	var svc:Node = req[&"service"]

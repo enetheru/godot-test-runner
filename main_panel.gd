@@ -370,7 +370,7 @@ func run_test_base( instance : TestBase, result : TestResult ) -> void:
 	instance._debug = test_debug
 	@warning_ignore('redundant_await')
 	await instance.run_test()
-	result.retcode = instance.runcode
+	result.retcode = instance.runcode as RetCode
 	result.output = instance.output
 
 

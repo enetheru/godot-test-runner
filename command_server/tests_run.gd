@@ -1,9 +1,10 @@
 @tool
 extends CommandServerCommand
 
-# Privileged: confirm dialog then sequential TestBase runs via TestRunnerService.
-# Do NOT await here — bare RefCounted coroutines are unreliable. Service is a
-# Node and completes via begin_run → on_done.
+# Privileged: confirm dialog then TestBase runs via TestRunnerService.
+# Default sequential; [code]parallel[/code] matches TestRunner UI (launch all,
+# no await between suites). Do NOT await here — bare RefCounted coroutines are
+# unreliable. Service is a Node and completes via begin_run → on_done.
 
 const Common = preload( "_tests_common.gd" )
 
@@ -13,11 +14,11 @@ func get_name() -> String:
 
 
 func get_description() -> String:
-	return "Confirm-and-run tests (all | group:Name | path | file) [verbose] [debug]."
+	return "Confirm-and-run tests (all | group:Name | path | file) [verbose] [debug] [parallel]."
 
 
 func get_usage() -> String:
-	return "TESTS_RUN <all|group:Name|res://path.gd|file.gd> [verbose] [debug]"
+	return "TESTS_RUN <all|group:Name|res://path.gd|file.gd> [verbose] [debug] [parallel]"
 
 
 func execute( _args:String, _context:Dictionary ) -> String:
@@ -60,37 +61,40 @@ func begin_execute( args:String, context:Dictionary, on_done:Callable ) -> void:
 		return
 
 	var opts:Dictionary = {}
-	if bool( parsed.get( &"verbose_set", false ) ):
-		opts["verbose"] = bool( parsed.get( &"verbose", false ) )
-	if bool( parsed.get( &"debug_set", false ) ):
-		opts["debug"] = bool( parsed.get( &"debug", false ) )
+	if parsed.get( &"verbose_set", false ):
+		opts["verbose"] = parsed.get( &"verbose", false )
+	if parsed.get( &"debug_set", false ):
+		opts["debug"] = parsed.get( &"debug", false )
+	if parsed.get( &"parallel_set", false ):
+		opts["parallel"] = parsed.get( &"parallel", false )
 
-	var use_v:bool = bool( opts.get( "verbose", svc.get( "verbose" ) ) )
-	var use_d:bool = bool( opts.get( "debug", svc.get( "debug" ) ) )
+	var use_v:bool = opts.get( "verbose", svc.get( "verbose" ) )
+	var use_d:bool = opts.get( "debug", svc.get( "debug" ) )
+	var use_p:bool = opts.get( "parallel", false )
 
 	var plugin:EditorPlugin = null
 	var server_v:Variant = context.get( &"server" )
 	if server_v is EditorPlugin:
 		plugin = server_v
 
-	var label:String = "%s (%d test(s), verbose=%s debug=%s)" % [
+	var label:String = "%s (%d test(s), verbose=%s debug=%s parallel=%s)" % [
 			target,
 			paths.size(),
 			str( use_v ),
 			str( use_d ),
+			str( use_p ),
 	]
 	_toast( "Command Server: TESTS_RUN awaiting approval", label )
 	_show_confirm_dialog( plugin, svc, paths, opts, label, on_done )
 
 
 func _show_confirm_dialog(
-		plugin:EditorPlugin,
-		svc:Node,
-		paths:PackedStringArray,
-		opts:Dictionary,
-		label:String,
-		on_done:Callable
-) -> void:
+			plugin:EditorPlugin,
+			svc:Node,
+			paths:PackedStringArray,
+			opts:Dictionary,
+			label:String,
+			on_done:Callable ) -> void:
 	var host:Control = EditorInterface.get_base_control()
 	if host == null:
 		on_done.call( "ERROR: no editor base control" )
@@ -125,18 +129,25 @@ func _show_confirm_dialog(
 	info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	info.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	var preview:PackedStringArray = PackedStringArray()
+	info.clip_text = false
+	info.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
+	var preview:Array = []
 	var max_show:int = mini( 12, paths.size() )
 	for i:int in max_show:
 		preview.append( "  • " + paths[i] )
 	if paths.size() > max_show:
 		preview.append( "  … +%d more" % ( paths.size() - max_show ) )
+	var mode_line:String = (
+			"Runs in parallel on the editor main thread (same as TestRunner UI)."
+			if opts.get( "parallel", false )
+			else "Runs sequentially on the editor main thread (default)."
+	)
 	info.text = (
 			"A remote client requested TESTS_RUN.\n"
 			+ "%s\n\n"
 			+ "Scripts:\n%s\n\n"
-			+ "Runs sequentially on the editor main thread (may crash)."
-	) % [label, "\n".join( preview )]
+			+ "%s May crash the editor."
+	) % [label, "\n".join( preview ), mode_line]
 
 	var buttons:HBoxContainer = HBoxContainer.new()
 	buttons.alignment = BoxContainer.ALIGNMENT_END

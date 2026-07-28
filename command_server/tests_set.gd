@@ -30,30 +30,32 @@ func execute( args:String, _context:Dictionary ) -> String:
 				" ".join( positional ),
 				get_usage(),
 		]
-	if not bool( parsed.get( &"verbose_set", false ) ) \
-	and not bool( parsed.get( &"debug_set", false ) ):
+	if not parsed.get( &"verbose_set", false ) \
+	and not parsed.get( &"debug_set", false ):
 		return "ERROR: Usage: " + get_usage()
 
-	var v:bool = bool( svc.get( "verbose" ) )
-	var d:bool = bool( svc.get( "debug" ) )
-	if bool( parsed.get( &"verbose_set", false ) ):
-		v = bool( parsed.get( &"verbose", false ) )
-	if bool( parsed.get( &"debug_set", false ) ):
-		d = bool( parsed.get( &"debug", false ) )
+	var v:bool = svc.get( "verbose" )
+	var d:bool = svc.get( "debug" )
+	if parsed.get( &"verbose_set", false ):
+		v = parsed.get( &"verbose", false )
+	if parsed.get( &"debug_set", false ):
+		d = parsed.get( &"debug", false )
 	svc.call( &"set_flags", v, d )
 
 	# Mirror to panel toggles when present.
 	var plugin:EditorPlugin = Common.find_test_runner_plugin()
 	if plugin != null and plugin.get( "main_panel_instance" ) != null:
-		var panel:Object = plugin.get( "main_panel_instance" ) as Object
+		var panel:Object = plugin.get( "main_panel_instance" )
 		if panel != null:
 			if panel.get( "test_verbose" ) != null:
 				panel.set( "test_verbose", v )
 			if panel.get( "test_debug" ) != null:
 				panel.set( "test_debug", d )
 			if panel.get( "verbose_btn" ) is CheckButton:
-				( panel.get( "verbose_btn" ) as CheckButton ).set_pressed_no_signal( v )
+				var cb:CheckButton = panel.get( "verbose_btn" )
+				cb.set_pressed_no_signal( v )
 			if panel.get( "debug_btn" ) is CheckButton:
-				( panel.get( "debug_btn" ) as CheckButton ).set_pressed_no_signal( d )
+				var cb:CheckButton = panel.get( "debug_btn" )
+				cb.set_pressed_no_signal( d )
 
 	return "OK: verbose=%s debug=%s" % [str( v ), str( d )]

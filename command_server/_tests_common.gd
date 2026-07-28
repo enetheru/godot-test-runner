@@ -45,7 +45,7 @@ static func get_service() -> Node:
 	if plugin.has_method( &"get_test_runner_service" ):
 		var svc_v:Variant = plugin.call( &"get_test_runner_service" )
 		if svc_v is Node:
-			return svc_v as Node
+			return svc_v
 	# Fallback: named child.
 	var child:Node = plugin.get_node_or_null( "TestRunnerService" )
 	return child

@@ -1,7 +1,7 @@
 @tool
 extends Node
 
-## Headless façade for TestRunner discovery and sequential TestBase runs.
+## Headless façade for TestRunner discovery and TestBase batch runs.
 ## Owned by the TestRunner EditorPlugin. Safe for Command Server callers.
 ## UI (main_panel) remains the Tree view; this object owns agent-facing state.
 
@@ -159,7 +159,7 @@ func resolve_targets( spec:String ) -> Dictionary:
 		return { &"paths": PackedStringArray(), &"error": "empty target" }
 
 	if token.to_lower() == "all":
-		var all_paths:PackedStringArray = PackedStringArray()
+		var all_paths:Array = []
 		for g:Variant in groups:
 			var gd:Dictionary = g
 			for s:Variant in gd.get( "scripts", [] ):
@@ -171,7 +171,7 @@ func resolve_targets( spec:String ) -> Dictionary:
 		var gname:String = token.substr( 6 ).strip_edges()
 		if gname.is_empty():
 			return { &"paths": PackedStringArray(), &"error": "group: requires a name" }
-		var matched:PackedStringArray = PackedStringArray()
+		var matched:Array = []
 		for g:Variant in groups:
 			var gd:Dictionary = g
 			var gn:String = str( gd.get( "group", "" ) )
@@ -200,7 +200,7 @@ func resolve_targets( spec:String ) -> Dictionary:
 	var basename:String = token
 	if not basename.ends_with( ".gd" ):
 		basename = basename + ".gd"
-	var hits:PackedStringArray = PackedStringArray()
+	var hits:Array = []
 	for g:Variant in groups:
 		var gd:Dictionary = g
 		for s:Variant in gd.get( "scripts", [] ):
@@ -292,11 +292,11 @@ func _run_batch(
 		var entry:Dictionary = await _run_one( path, use_verbose, use_debug )
 		var tests_arr:Array = results["tests"]
 		tests_arr.append( entry )
-		results["ran"] = int( results["ran"] ) + 1
-		if int( entry.get( "retcode", RetCode.TEST_FAILED ) ) == RetCode.TEST_OK:
-			results["passed"] = int( results["passed"] ) + 1
+		results["ran"] = results["ran"] + 1
+		if entry.get( "retcode", RetCode.TEST_FAILED ) == RetCode.TEST_OK:
+			results["passed"] = results["passed"] + 1
 		else:
-			results["failed"] = int( results["failed"] ) + 1
+			results["failed"] = results["failed"] + 1
 			results["ok"] = false
 		batch_progress.emit( i, total, entry )
 		# Persist after each test so a crash mid-batch keeps partial progress.
@@ -338,13 +338,14 @@ func _run_one( script_path:String, use_verbose:bool, use_debug:bool ) -> Diction
 		entry["output"] = ["Cannot instantiate: %s" % script_path]
 		return entry
 
-	var instance_v:Variant = script.new()
+	var instance_v:Object = script.new()
 	if instance_v == null:
 		entry["output"] = ["script.new() returned null: %s" % script_path]
 		return entry
 
 	# Prefer TestBase; accept duck-typed run_test + runcode/output.
-	if not instance_v is TestBase and not instance_v.has_method( &"run_test" ):
+	if not instance_v is TestBase \
+	and not instance_v.has_method( &"run_test" ):
 		entry["output"] = ["Not a TestBase (no run_test): %s" % script_path]
 		if instance_v is Object and is_instance_valid( instance_v ):
 			( instance_v as Object ).free()
@@ -355,7 +356,7 @@ func _run_one( script_path:String, use_verbose:bool, use_debug:bool ) -> Diction
 	_try_set( instance, "_debug", use_debug )
 
 	# Hold a hard ref for the await lifetime (same idea as TestBase.cycleref).
-	var keep:Object = instance
+	var _keep:Object = instance
 	@warning_ignore( "redundant_await" )
 	if instance.has_method( &"run_test" ):
 		await instance.call( &"run_test" )
@@ -363,14 +364,9 @@ func _run_one( script_path:String, use_verbose:bool, use_debug:bool ) -> Diction
 		entry["output"] = ["run_test missing after type check: %s" % script_path]
 		return entry
 
-	var retcode:int = RetCode.TEST_FAILED
-	var output:Array = []
-	var rc_v:Variant = instance.get( "runcode" )
-	if rc_v != null:
-		retcode = int( rc_v )
-	var out_v:Variant = instance.get( "output" )
-	if out_v is Array:
-		output = ( out_v as Array ).duplicate()
+	var retcode:int = instance.get( "runcode" )
+	var out_v:Array = instance.get( "output" )
+	var output:Array = out_v.duplicate()
 
 	entry["retcode"] = retcode
 	var status:String = "OK" if retcode == RetCode.TEST_OK else "FAILED"
@@ -384,7 +380,7 @@ func _run_one( script_path:String, use_verbose:bool, use_debug:bool ) -> Diction
 	entry["status"] = status
 	entry["output"] = _cap_output( output )
 
-	keep = null
+	_keep = null
 	if is_instance_valid( instance ) and not ( instance is RefCounted ):
 		instance.free()
 	return entry
@@ -436,8 +432,8 @@ func _write_results_files( results:Dictionary, run_id:String ) -> void:
 
 
 func _format_log( results:Dictionary ) -> String:
-	var lines:PackedStringArray = PackedStringArray()
-	lines.append( "run_id=%s ok=%s ran=%s passed=%s failed=%s verbose=%s debug=%s" % [
+	var lines:Array = []
+	lines.append( "run_id=%s ok=%s ran=%s passed=%s failed=%s verbose=%s debug=%s parallel=%s" % [
 			str( results.get( "run_id", "" ) ),
 			str( results.get( "ok", false ) ),
 			str( results.get( "ran", 0 ) ),
@@ -445,6 +441,7 @@ func _format_log( results:Dictionary ) -> String:
 			str( results.get( "failed", 0 ) ),
 			str( results.get( "verbose", false ) ),
 			str( results.get( "debug", false ) ),
+			str( results.get( "parallel", false ) ),
 	] )
 	for t:Variant in results.get( "tests", [] ):
 		var td:Dictionary = t
@@ -488,7 +485,7 @@ func format_list_text() -> String:
 	var list:Array = list_tests()
 	if list.is_empty():
 		return "OK: no test groups under %s" % test_path
-	var lines:PackedStringArray = PackedStringArray()
+	var lines:Array = []
 	lines.append( "OK: tests under %s" % test_path )
 	for g:Variant in list:
 		var gd:Dictionary = g
@@ -508,9 +505,10 @@ func format_list_text() -> String:
 func format_results_reply( results:Dictionary, heading:String = "TESTS_RUN complete" ) -> String:
 	if results.has( "error" ) and str( results.get( "error", "" ) ) != "":
 		var err:String = str( results["error"] )
-		if not results.has( "tests" ) or ( results.get( "tests", [] ) as Array ).is_empty():
+		var tests:Array = results.get( "tests" )
+		if tests.is_empty():
 			return "ERROR: %s" % err
-	var ok_flag:bool = bool( results.get( "ok", false ) )
+	var ok_flag:bool = results.get( "ok", false )
 	var prefix:String = "OK" if ok_flag else "OK"
 	# Always OK: prefix for parseable multi-line; body carries ok:false.
 	# Agent exit codes: godot-cmd treats OK: as success of the *command*, not tests.
