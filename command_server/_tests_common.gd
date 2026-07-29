@@ -58,15 +58,17 @@ static func require_service() -> Dictionary:
 	return { &"service": svc }
 
 
-## Parse trailing flag tokens: verbose / debug / verbose=0|1 / debug=0|1
+## Parse trailing flag tokens: verbose / debug / parallel (+ =0|1|true|false).
 ## Returns remaining positional tokens + flags dict.
 static func parse_flags( args:String ) -> Dictionary:
 	var tokens:PackedStringArray = args.strip_edges().split( " ", false )
-	var positional:PackedStringArray = PackedStringArray()
+	var positional:Array = []
 	var verbose_set:bool = false
 	var debug_set:bool = false
+	var parallel_set:bool = false
 	var verbose:bool = false
 	var debug:bool = false
+	var parallel:bool = false
 
 	for t:String in tokens:
 		var low:String = t.to_lower()
@@ -82,7 +84,15 @@ static func parse_flags( args:String ) -> Dictionary:
 		elif low == "debug=0" or low == "debug=false":
 			debug = false
 			debug_set = true
-		elif low.begins_with( "verbose=" ) or low.begins_with( "debug=" ):
+		elif low == "parallel" or low == "parallel=1" or low == "parallel=true":
+			parallel = true
+			parallel_set = true
+		elif low == "parallel=0" or low == "parallel=false":
+			parallel = false
+			parallel_set = true
+		elif low.begins_with( "verbose=" ) \
+		or low.begins_with( "debug=" ) \
+		or low.begins_with( "parallel=" ):
 			return { &"error": "ERROR: bad flag token '%s'" % t }
 		else:
 			positional.append( t )
@@ -91,6 +101,8 @@ static func parse_flags( args:String ) -> Dictionary:
 		&"positional": positional,
 		&"verbose": verbose,
 		&"debug": debug,
+		&"parallel": parallel,
 		&"verbose_set": verbose_set,
 		&"debug_set": debug_set,
+		&"parallel_set": parallel_set,
 	}

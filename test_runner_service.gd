@@ -4,6 +4,8 @@ extends Node
 ## Headless façade for TestRunner discovery and TestBase batch runs.
 ## Owned by the TestRunner EditorPlugin. Safe for Command Server callers.
 ## UI (main_panel) remains the Tree view; this object owns agent-facing state.
+## Default batch is sequential; [code]opts.parallel[/code] matches the UI
+## (launch every suite without awaiting the previous).
 
 const Shared = preload( "scripts/shared.gd" )
 const RetCode = Shared.RetCode
@@ -228,7 +230,9 @@ func get_last_results() -> Dictionary:
 	return _load_last_json()
 
 
-## Start a sequential batch. Completes via [param on_done](results:Dictionary).
+## Start a batch. Completes via [param on_done](results:Dictionary).
+## [param opts.parallel]: if true, launch all suites like the TestRunner UI
+## (no await between starts); otherwise sequential.
 ## Never use bare await from CommandServerCommand — call this instead.
 func begin_run(
 		paths:PackedStringArray,
@@ -263,12 +267,12 @@ func begin_run(
 
 
 func _run_batch(
-		paths:PackedStringArray,
-		opts:Dictionary,
-		on_done:Callable
-) -> void:
-	var use_verbose:bool = bool( opts.get( "verbose", verbose ) )
-	var use_debug:bool = bool( opts.get( "debug", debug ) )
+			paths:PackedStringArray,
+			opts:Dictionary,
+			on_done:Callable ) -> void:
+	var use_verbose:bool = opts.get( "verbose", verbose )
+	var use_debug:bool = opts.get( "debug", debug )
+	var use_parallel:bool = opts.get( "parallel", false )
 	var stamp:String = Time.get_datetime_string_from_system( false, true )
 	stamp = stamp.replace( ":", "-" ).replace( " ", "_" )
 	var run_id:String = "run_%s" % stamp
@@ -280,11 +284,25 @@ func _run_batch(
 		"failed": 0,
 		"verbose": use_verbose,
 		"debug": use_debug,
+		"parallel": use_parallel,
 		"run_id": run_id,
 		"log_path": "",
 		"tests": [],
 	}
 
+	if use_parallel:
+		_run_batch_parallel( paths, use_verbose, use_debug, results, run_id, on_done )
+	else:
+		await _run_batch_sequential( paths, use_verbose, use_debug, results, run_id )
+		_finish_batch( results, on_done )
+
+
+func _run_batch_sequential(
+			paths:PackedStringArray,
+			use_verbose:bool,
+			use_debug:bool,
+			results:Dictionary,
+			run_id:String ) -> void:
 	var total:int = paths.size()
 	var i:int = 0
 	for path:String in paths:
@@ -302,6 +320,77 @@ func _run_batch(
 		# Persist after each test so a crash mid-batch keeps partial progress.
 		_write_results_files( results, run_id )
 
+
+## Parallel batch: same launch model as TestRunner UI process_selection.
+## Why flag exists: sequential-only could not prove suite isolation under real
+## concurrent load (UI Run-all). Default remains sequential.
+func _run_batch_parallel(
+			paths:PackedStringArray,
+			use_verbose:bool,
+			use_debug:bool,
+			results:Dictionary,
+			run_id:String,
+			on_done:Callable ) -> void:
+	var total:int = paths.size()
+	# Array box so each worker mutates one shared remaining-count (int by value would not).
+	var left:Array = [ total ]
+	# Slots preserve discovery order in the reply even when finish order differs.
+	var slots:Array = []
+	assert( slots.resize( total ) )
+	for i:int in total:
+		slots[i] = null
+	results["tests"] = slots
+
+	if total == 0:
+		_finish_batch( results, on_done )
+		return
+
+	for i:int in total:
+		# No await — fire concurrent coroutines like process_test(file_item).
+		_run_one_parallel_slot(
+				paths[i],
+				i,
+				total,
+				use_verbose,
+				use_debug,
+				results,
+				run_id,
+				left,
+				on_done
+		)
+
+
+func _run_one_parallel_slot(
+			path:String,
+			index:int,
+			total:int,
+			use_verbose:bool,
+			use_debug:bool,
+			results:Dictionary,
+			run_id:String,
+			left:Array,
+			on_done:Callable ) -> void:
+	var entry:Dictionary = await _run_one( path, use_verbose, use_debug )
+	var tests_arr:Array = results["tests"]
+	tests_arr[index] = entry
+
+	if entry.get( "retcode", RetCode.TEST_FAILED ) == RetCode.TEST_OK:
+		results["passed"] = results["passed"] + 1
+	else:
+		results["failed"] = results["failed"] + 1
+		results["ok"] = false
+	results["ran"] = results["ran"] + 1
+
+	var done_n:int = results["ran"]
+	batch_progress.emit( done_n, total, entry )
+	_write_results_files( results, run_id )
+
+	left[0] = left[0] - 1
+	if left[0] <= 0:
+		_finish_batch( results, on_done )
+
+
+func _finish_batch( results:Dictionary, on_done:Callable ) -> void:
 	last_results = results
 	last_log_path = str( results.get( "log_path", "" ) )
 	is_running = false
