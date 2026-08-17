@@ -21,11 +21,24 @@ func get_usage() -> String:
 	return "TESTS_RUN <all|group:Name|res://path.gd|file.gd> [verbose] [debug] [parallel]"
 
 
-func execute( _args:String, _context:Dictionary ) -> String:
+func _execute_line( _args:String, _context:Dictionary ) -> String:
 	return "ERROR: TESTS_RUN requires async begin_execute (internal)"
 
 
-func begin_execute( args:String, context:Dictionary, on_done:Callable ) -> void:
+func begin_execute(
+		arguments:Dictionary,
+		context:Dictionary,
+		on_done:Callable
+) -> void:
+	_begin(
+			line_from_arguments( arguments ),
+			context,
+			func( reply:String ) -> void:
+				on_done.call( result_from_text( reply ) )
+	)
+
+
+func _begin( args:String, context:Dictionary, on_done:Callable ) -> void:
 	var req:Dictionary = Common.require_service()
 	if req.has( &"error" ):
 		on_done.call( str( req[&"error"] ) )

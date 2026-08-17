@@ -16,7 +16,7 @@ func get_usage() -> String:
 	return "TESTS_RELOAD"
 
 
-func execute( _args:String, _context:Dictionary ) -> String:
+func _execute_line( _args:String, _context:Dictionary ) -> String:
 	var req:Dictionary = Common.require_service()
 	if req.has( &"error" ):
 		return str( req[&"error"] )

@@ -16,5 +16,5 @@ func get_usage() -> String:
 	return "TESTS_PING"
 
 
-func execute( _args:String, _context:Dictionary ) -> String:
+func _execute_line( _args:String, _context:Dictionary ) -> String:
 	return "OK: test-runner registered"

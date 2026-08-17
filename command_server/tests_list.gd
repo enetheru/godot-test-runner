@@ -16,7 +16,7 @@ func get_usage() -> String:
 	return "TESTS_LIST [--json]"
 
 
-func execute( args:String, _context:Dictionary ) -> String:
+func _execute_line( args:String, _context:Dictionary ) -> String:
 	var req:Dictionary = Common.require_service()
 	if req.has( &"error" ):
 		return str( req[&"error"] )
