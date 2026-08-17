@@ -86,6 +86,8 @@ var _service : Node = null
 var test_path : String = 'res://tests'
 var test_script_filter : Callable = default_script_filter
 var test_folder_filter : Callable = default_folder_filter
+## Junction / symlink cycle guard — not a UI depth limit.
+var max_scan_depth : int = Shared.DEFAULT_MAX_SCAN_DEPTH
 
 
 #             ███████ ██    ██ ███████ ███    ██ ████████ ███████              #
@@ -220,24 +222,24 @@ func default_folder_filter( folder_path : String ) -> bool:
 
 
 func collect_tests( _path : String ) -> Array[TestDef]:
-	var tests : Array[TestDef]
-
-	var folders : Array = DirAccess.get_directories_at(_path)
-	var folder_paths : Array = folders.map( func(folder : String) -> String:
-			return "/".join([_path,folder]))
-	folder_paths.sort()
-	for folder_path : String in folder_paths.filter( test_folder_filter ):
-		var files : Array = DirAccess.get_files_at( folder_path )
-		var folder : String = folder_path.get_file()
-
-		var def : TestDef = TestDef.new()
-		def.name =  folder.to_pascal_case()
-		def.folder_path =  folder_path
-		def.test_scripts =  files.filter( test_script_filter )
-
-		tests.append( def )
-
+	var tree:Array[Dictionary] = Shared.collect_test_tree(
+			_path, max_scan_depth, test_script_filter )
+	var tests : Array[TestDef] = []
+	for node:Dictionary in tree:
+		tests.append( _test_def_from_node( node ) )
 	return tests
+
+
+func _test_def_from_node( node:Dictionary ) -> TestDef:
+	var def : TestDef = TestDef.new()
+	def.name = str( node.get( "name", "" ) )
+	def.folder_path = str( node.get( "folder_path", "" ) )
+	def.test_scripts = node.get( "test_scripts", [] )
+	for child_v:Variant in node.get( "children", [] ):
+		if child_v is Dictionary:
+			var child:Dictionary = child_v
+			def.children.append( _test_def_from_node( child ) )
+	return def
 
 
 var already_updating : bool = false
@@ -249,12 +251,18 @@ func update_stats() -> void:
 	var results : int = 0
 	var failures : int = 0
 	var successes : int = 0
-	for test_def : TestDef in test_list:
+	var stack:Array = test_list.duplicate()
+	while not stack.is_empty():
+		var test_def : TestDef = stack.pop_back()
 		groups += 1
 		for result : TestResult in test_def.results.values():
 			results += 1
 			if result.retcode == RetCode.TEST_OK: successes += 1
 			if result.retcode == RetCode.TEST_FAILED: failures += 1
+		for child_v:Variant in test_def.children:
+			if child_v is TestDef:
+				var child_def:TestDef = child_v
+				stack.append( child_def )
 
 	stats_counter.add_text("%d:" % groups)
 	stats_counter.add_image(FOLDER_OPEN, 23)
@@ -290,13 +298,31 @@ func process_selection() -> void:
 	else:
 		selection = test_selection.keys()
 
-	for folder_item : TreeItem in selection:
-		for file_item : TreeItem in folder_item.get_children():
-			var _test_def : TestDef = file_item.get_metadata(0)
-			process_test(file_item)
+	for item : TreeItem in selection:
+		for file_item : TreeItem in _file_items_under( item ):
+			process_test( file_item )
+
+
+func _is_file_item( item : TreeItem ) -> bool:
+	if item == null:
+		return false
+	var meta : Variant = item.get_metadata( 0 )
+	return meta is TestDef \
+	and str( item.get_text( 0 ) ).ends_with( ".gd" )
+
+
+func _file_items_under( item : TreeItem ) -> Array[TreeItem]:
+	var out : Array[TreeItem] = []
+	if _is_file_item( item ):
+		out.append( item )
+	for child : TreeItem in item.get_children():
+		out.append_array( _file_items_under( child ) )
+	return out
 
 
 func process_test( file_item : TreeItem ) -> void:
+	if not _is_file_item( file_item ):
+		return
 	var info_box : InfoBox = await create_info( file_item )
 	var test_def : TestDef = file_item.get_metadata(0)
 	var script_file : String = file_item.get_text(0)
@@ -468,18 +494,26 @@ func regenerate_tree() -> void:
 	var _top_item : TreeItem = tests_tree.create_item()
 	_top_item.set_text(0,"Tests")
 
-	# Add the rows
+	# Add the rows (folder depth follows the disk; no hardcoded levels)
+	var root_item : TreeItem = tests_tree.get_root()
 	for test_def : TestDef in test_list:
-		# Add Folder name
-		var folder_item : TreeItem = tests_tree.create_item()
-		folder_item.set_text( 0, test_def.name )
-		folder_item.set_selectable(1, false )
-
-		# Add script items
-		for file : String in test_def.test_scripts:
-			add_action_row( test_def, file, folder_item )
+		_add_folder_branch( test_def, root_item )
 
 	update_stats()
+
+
+func _add_folder_branch( test_def : TestDef, parent_item : TreeItem ) -> void:
+	var folder_item : TreeItem = parent_item.create_child()
+	folder_item.set_text( 0, test_def.name )
+	folder_item.set_selectable( 1, false )
+	folder_item.set_icon( 0, FOLDER_OPEN )
+	folder_item.set_icon_max_width( 0, 16 )
+	for child_v : Variant in test_def.children:
+		if child_v is TestDef:
+			var child_def : TestDef = child_v
+			_add_folder_branch( child_def, folder_item )
+	for file : String in test_def.test_scripts:
+		add_action_row( test_def, file, folder_item )
 
 
 func update_tree_item(

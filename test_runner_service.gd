@@ -24,6 +24,8 @@ const DEFAULT_TEST_PATH:String = "res://tests"
 func                        ________PROPERTIES_______              ()->void:pass
 
 var test_path:String = DEFAULT_TEST_PATH
+## Junction / symlink cycle guard — not a group-name depth limit.
+var max_scan_depth:int = Shared.DEFAULT_MAX_SCAN_DEPTH
 ## Cached groups: { group, folder, scripts:[{file,path}] }
 var groups:Array = []
 var verbose:bool = false
@@ -63,12 +65,9 @@ func default_script_filter( filename:String ) -> bool:
 		and not filename.ends_with( "_generated.gd" )
 
 
-func default_folder_filter( folder_path:String ) -> bool:
-	var files:PackedStringArray = DirAccess.get_files_at( folder_path )
-	for f:String in files:
-		if _script_filter.call( f ):
-			return true
-	return false
+func default_folder_filter( _folder_path:String ) -> bool:
+	# Do not require scripts in this folder — children may hold them.
+	return true
 
 
 func set_verbose( v:bool ) -> void:
@@ -113,40 +112,40 @@ func list_tests() -> Array:
 
 
 ## Collect group dictionaries without touching Tree/UI.
+## Nested folders become [code]Group/Sub[/code] names. [code]group:Parent[/code]
+## matches that node and every descendant.
 func collect_groups( path:String = "" ) -> Array:
 	var root:String = path if not path.is_empty() else test_path
+	var tree:Array[Dictionary] = Shared.collect_test_tree(
+			root, max_scan_depth, _script_filter, Callable(), _folder_filter )
+	return _groups_from_tree( tree, "" )
+
+
+func _groups_from_tree( nodes:Array, prefix:String ) -> Array:
 	var out:Array = []
-	if not DirAccess.dir_exists_absolute( ProjectSettings.globalize_path( root ) ) \
-	and not DirAccess.dir_exists_absolute( root ):
-		# DirAccess.get_directories_at works with res:// even when globalize fails.
-		pass
-
-	var folders:PackedStringArray = DirAccess.get_directories_at( root )
-	var folder_paths:Array = []
-	for folder:String in folders:
-		folder_paths.append( root.path_join( folder ) )
-	folder_paths.sort()
-
-	for folder_path:String in folder_paths:
-		if not _folder_filter.call( folder_path ):
+	for node_v:Variant in nodes:
+		if not node_v is Dictionary:
 			continue
-		var files:PackedStringArray = DirAccess.get_files_at( folder_path )
-		var scripts:Array = []
-		for f:String in files:
-			if not _script_filter.call( f ):
-				continue
-			scripts.append( {
-				"file": f,
-				"path": folder_path.path_join( f ),
+		var node:Dictionary = node_v
+		var leaf:String = str( node.get( "name", "" ) )
+		var gname:String = leaf if prefix.is_empty() else prefix + "/" + leaf
+		var scripts_raw:Array = node.get( "test_scripts", [] )
+		if not scripts_raw.is_empty():
+			var scripts:Array = []
+			var folder_path:String = str( node.get( "folder_path", "" ) )
+			for f:Variant in scripts_raw:
+				scripts.append( {
+					"file": str( f ),
+					"path": folder_path.path_join( str( f ) ),
+				} )
+			out.append( {
+				"group": gname,
+				"folder": folder_path,
+				"scripts": scripts,
 			} )
-		if scripts.is_empty():
-			continue
-		var folder_name:String = folder_path.get_file()
-		out.append( {
-			"group": folder_name.to_pascal_case(),
-			"folder": folder_path,
-			"scripts": scripts,
-		} )
+		var kids:Array = node.get( "children", [] )
+		if not kids.is_empty():
+			out.append_array( _groups_from_tree( kids, gname ) )
 	return out
 
 
@@ -176,12 +175,11 @@ func resolve_targets( spec:String ) -> Dictionary:
 		var matched:Array = []
 		for g:Variant in groups:
 			var gd:Dictionary = g
-			var gn:String = str( gd.get( "group", "" ) )
-			if gn.to_lower() == gname.to_lower() \
-			or str( gd.get( "folder", "" ) ).get_file().to_lower() == gname.to_lower():
-				for s:Variant in gd.get( "scripts", [] ):
-					var sd:Dictionary = s
-					matched.append( str( sd.get( "path", "" ) ) )
+			if not _group_spec_matches( gd, gname ):
+				continue
+			for s:Variant in gd.get( "scripts", [] ):
+				var sd:Dictionary = s
+				matched.append( str( sd.get( "path", "" ) ) )
 		if matched.is_empty():
 			return {
 				&"paths": PackedStringArray(),
@@ -494,12 +492,30 @@ func _cap_output( lines:Array ) -> Array:
 	return capped
 
 
+func _group_spec_matches( gd:Dictionary, spec:String ) -> bool:
+	var want:String = spec.to_lower()
+	var gn:String = str( gd.get( "group", "" ) ).to_lower()
+	if gn == want \
+	or gn.begins_with( want + "/" ):
+		return true
+	var folder:String = str( gd.get( "folder", "" ) )
+	return folder.get_file().to_lower() == want \
+	or folder.get_file().to_pascal_case().to_lower() == want
+
+
 func _group_for_path( script_path:String ) -> String:
+	var best:String = ""
+	var best_len:int = -1
 	for g:Variant in groups:
 		var gd:Dictionary = g
 		var folder:String = str( gd.get( "folder", "" ) )
-		if script_path.begins_with( folder + "/" ) or script_path.begins_with( folder + "\\" ):
-			return str( gd.get( "group", "" ) )
+		if script_path.begins_with( folder + "/" ) \
+		or script_path.begins_with( folder + "\\" ):
+			if folder.length() > best_len:
+				best = str( gd.get( "group", "" ) )
+				best_len = folder.length()
+	if not best.is_empty():
+		return best
 	var parent:String = script_path.get_base_dir().get_file()
 	return parent.to_pascal_case()
 
