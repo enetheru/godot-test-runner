@@ -606,7 +606,9 @@ func format_list_text() -> String:
 	return "\n".join( lines )
 
 
-## Serialize results for TCP: OK line + JSON body.
+## Serialize results for TCP/MCP: OK line + BBCode body.
+## Full JSON stays in [member last_log_path] — do not dump it here; `[` in
+## JSON arrays is not BBCode and [method @GlobalScope.print_rich] would eat it.
 func format_results_reply( results:Dictionary, heading:String = "TESTS_RUN complete" ) -> String:
 	if results.has( "error" ) and str( results.get( "error", "" ) ) != "":
 		var err:String = str( results["error"] )
@@ -615,7 +617,7 @@ func format_results_reply( results:Dictionary, heading:String = "TESTS_RUN compl
 			return "ERROR: %s" % err
 	var ok_flag:bool = results.get( "ok", false )
 	var prefix:String = "OK" if ok_flag else "OK"
-	# Always OK: prefix for parseable multi-line; body carries ok:false.
+	# Always OK: prefix for parseable multi-line; body carries status in BBCode.
 	# Agent exit codes: godot-cmd treats OK: as success of the *command*, not tests.
 	var summary:String = "%s: %s ran=%s passed=%s failed=%s log=%s" % [
 			prefix,
@@ -625,5 +627,22 @@ func format_results_reply( results:Dictionary, heading:String = "TESTS_RUN compl
 			str( results.get( "failed", 0 ) ),
 			str( results.get( "log_path", last_log_path ) ),
 	]
-	var body:String = JSON.stringify( results )
-	return summary + "\n" + body
+	var lines:PackedStringArray = PackedStringArray()
+	var _n:int = lines.append( summary )
+	var tests_v:Array = results.get( "tests", [] )
+	for t:Variant in tests_v:
+		if not ( t is Dictionary ):
+			continue
+		var td:Dictionary = t
+		var status:String = str( td.get( "status", "" ) )
+		var color:String = "yellowgreen" if status == "OK" else "tomato"
+		_n = lines.append( "" )
+		_n = lines.append( "[b]%s[/b]  [color=%s]%s[/color]  [i]%s[/i]" % [
+				str( td.get( "group", "" ) ),
+				color,
+				status,
+				str( td.get( "path", "" ) ),
+		] )
+		for o:Variant in td.get( "output", [] ):
+			_n = lines.append( "\t%s" % str( o ) )
+	return "\n".join( lines )
