@@ -503,17 +503,40 @@ func regenerate_tree() -> void:
 
 
 func _add_folder_branch( test_def : TestDef, parent_item : TreeItem ) -> void:
+	if _folder_visible_count( test_def ) < 2:
+		_add_folder_contents( test_def, parent_item )
+		return
 	var folder_item : TreeItem = parent_item.create_child()
 	folder_item.set_text( 0, test_def.name )
 	folder_item.set_selectable( 1, false )
 	folder_item.set_icon( 0, FOLDER_OPEN )
 	folder_item.set_icon_max_width( 0, 16 )
+	_add_folder_contents( test_def, folder_item )
+
+
+func _add_folder_contents( test_def : TestDef, parent_item : TreeItem ) -> void:
 	for child_v : Variant in test_def.children:
 		if child_v is TestDef:
 			var child_def : TestDef = child_v
-			_add_folder_branch( child_def, folder_item )
+			_add_folder_branch( child_def, parent_item )
 	for file : String in test_def.test_scripts:
-		add_action_row( test_def, file, folder_item )
+		add_action_row( test_def, file, parent_item )
+
+
+## Folder row only if it would show 2+ items (scripts and/or kept child folders).
+func _folder_visible_count( test_def : TestDef ) -> int:
+	var folders:int = 0
+	var scripts:int = test_def.test_scripts.size()
+	for child_v : Variant in test_def.children:
+		if not child_v is TestDef:
+			continue
+		var child_def : TestDef = child_v
+		var n:int = _folder_visible_count( child_def )
+		if n >= 2:
+			folders += 1
+		else:
+			scripts += n
+	return folders + scripts
 
 
 func update_tree_item(

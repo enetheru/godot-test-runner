@@ -345,6 +345,7 @@ func _run_batch_parallel(
 
 	for i:int in total:
 		# No await — fire concurrent coroutines like process_test(file_item).
+		@warning_ignore("missing_await")
 		_run_one_parallel_slot(
 				paths[i],
 				i,
@@ -548,7 +549,13 @@ func _format_log( results:Dictionary ) -> String:
 			str( results.get( "debug", false ) ),
 			str( results.get( "parallel", false ) ),
 	] )
-	for t:Variant in results.get( "tests", [] ):
+	var tests_v:Array = results.get( "tests", [] )
+	if tests_v.size() > 1:
+		lines.append( "" )
+		lines.append( format_summary_table( results, false ) )
+	for t:Variant in tests_v:
+		if not ( t is Dictionary ):
+			continue
 		var td:Dictionary = t
 		lines.append( "" )
 		lines.append( "=== %s [%s] retcode=%s ===" % [
@@ -606,7 +613,56 @@ func format_list_text() -> String:
 	return "\n".join( lines )
 
 
+## One line per suite + recap. Used by TCP/MCP and log files.
+func format_summary_table( results:Dictionary, bbcode:bool = true ) -> String:
+	var tests_v:Array = results.get( "tests", [] )
+	var passed:int = 0
+	passed = results.get( "passed", 0 )
+	var failed:int = 0
+	failed = results.get( "failed", 0 )
+	var lines:PackedStringArray = PackedStringArray()
+	var _n:int = lines.append( "[b]Summary[/b]" if bbcode else "Summary" )
+	for t:Variant in tests_v:
+		if not ( t is Dictionary ):
+			continue
+		var td:Dictionary = t
+		var status:String = str( td.get( "status", "" ) )
+		var group:String = str( td.get( "group", "" ) )
+		var path:String = str( td.get( "path", "" ) )
+		var file:String = path.get_file()
+		if file.is_empty():
+			file = path
+		if bbcode:
+			var color:String = "yellowgreen" if status == "OK" else "tomato"
+			_n = lines.append( "  [color=%s]%s[/color]  %s  [i]%s[/i]" % [
+					color, status, group, file ] )
+		else:
+			_n = lines.append( "  %s  %s  %s" % [status, group, file] )
+	var recap:String = "%d passed, %d failed" % [passed, failed]
+	_n = lines.append( "" )
+	if bbcode:
+		var recap_color:String = "yellowgreen" if failed == 0 else "tomato"
+		_n = lines.append( "[b][color=%s]%s[/color][/b]" % [recap_color, recap] )
+	else:
+		_n = lines.append( recap )
+	if failed > 0:
+		for t:Variant in tests_v:
+			if not ( t is Dictionary ):
+				continue
+			var td:Dictionary = t
+			if str( td.get( "status", "" ) ) == "OK":
+				continue
+			var path:String = str( td.get( "path", "" ) )
+			if bbcode:
+				_n = lines.append( "  [color=tomato]FAIL[/color]  %s" % path )
+			else:
+				_n = lines.append( "  FAIL  %s" % path )
+	return "\n".join( lines )
+
+
 ## Serialize results for TCP/MCP: OK line + BBCode body.
+## Multi-suite runs print a compact table first. Per-suite logs follow only
+## for failures, or for every suite when verbose / a single test.
 ## Full JSON stays in [member last_log_path] — do not dump it here; `[` in
 ## JSON arrays is not BBCode and [method @GlobalScope.print_rich] would eat it.
 func format_results_reply( results:Dictionary, heading:String = "TESTS_RUN complete" ) -> String:
@@ -615,12 +671,9 @@ func format_results_reply( results:Dictionary, heading:String = "TESTS_RUN compl
 		var tests:Array = results.get( "tests" )
 		if tests.is_empty():
 			return "ERROR: %s" % err
-	var ok_flag:bool = results.get( "ok", false )
-	var prefix:String = "OK" if ok_flag else "OK"
 	# Always OK: prefix for parseable multi-line; body carries status in BBCode.
 	# Agent exit codes: godot-cmd treats OK: as success of the *command*, not tests.
-	var summary:String = "%s: %s ran=%s passed=%s failed=%s log=%s" % [
-			prefix,
+	var header:String = "OK: %s ran=%s passed=%s failed=%s log=%s" % [
 			heading,
 			str( results.get( "ran", 0 ) ),
 			str( results.get( "passed", 0 ) ),
@@ -628,13 +681,23 @@ func format_results_reply( results:Dictionary, heading:String = "TESTS_RUN compl
 			str( results.get( "log_path", last_log_path ) ),
 	]
 	var lines:PackedStringArray = PackedStringArray()
-	var _n:int = lines.append( summary )
+	var _n:int = lines.append( header )
 	var tests_v:Array = results.get( "tests", [] )
+	var use_verbose:bool = false
+	use_verbose = results.get( "verbose", false )
+	var dump_all:bool = use_verbose or tests_v.size() <= 1
+	if tests_v.size() > 1:
+		_n = lines.append( "" )
+		_n = lines.append( format_summary_table( results, true ) )
+	var dumped:bool = false
 	for t:Variant in tests_v:
 		if not ( t is Dictionary ):
 			continue
 		var td:Dictionary = t
 		var status:String = str( td.get( "status", "" ) )
+		if not dump_all and status == "OK":
+			continue
+		dumped = true
 		var color:String = "yellowgreen" if status == "OK" else "tomato"
 		_n = lines.append( "" )
 		_n = lines.append( "[b]%s[/b]  [color=%s]%s[/color]  [i]%s[/i]" % [
@@ -645,4 +708,13 @@ func format_results_reply( results:Dictionary, heading:String = "TESTS_RUN compl
 		] )
 		for o:Variant in td.get( "output", [] ):
 			_n = lines.append( "\t%s" % str( o ) )
+	if dumped and tests_v.size() > 1:
+		var failed:int = 0
+		failed = results.get( "failed", 0 )
+		var passed:int = 0
+		passed = results.get( "passed", 0 )
+		var recap:String = "%d passed, %d failed" % [passed, failed]
+		var recap_color:String = "yellowgreen" if failed == 0 else "tomato"
+		_n = lines.append( "" )
+		_n = lines.append( "[b][color=%s]%s[/color][/b]" % [recap_color, recap] )
 	return "\n".join( lines )

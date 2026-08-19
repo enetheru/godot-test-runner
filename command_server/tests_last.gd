@@ -1,10 +1,10 @@
 @tool
-extends CommandServerCommand
+extends CommandServerTool
 
 const Common = preload( "_tests_common.gd" )
 
 
-func get_name() -> String:
+func get_command_name() -> String:
 	return "TESTS_LAST"
 
 
@@ -14,6 +14,14 @@ func get_description() -> String:
 
 func get_usage() -> String:
 	return "TESTS_LAST"
+
+
+func get_input_schema() -> Dictionary:
+	return {
+		"type": "object",
+		"properties": {},
+		"additionalProperties": false,
+	}
 
 
 func _execute_line( _args:String, _context:Dictionary ) -> String:

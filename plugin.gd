@@ -61,7 +61,7 @@ func get_test_runner_service() -> Node:
 func _register_with_command_server() -> void:
 	_unregister_from_command_server()
 	var cs:EditorPlugin = _find_command_server()
-	if cs == null:
+	if not is_instance_valid( cs ):
 		print( "TestRunner: Command Server not found; TESTS_* commands not registered" )
 		return
 	if not cs.has_method( &"register_commands_from_path" ):
@@ -72,16 +72,15 @@ func _register_with_command_server() -> void:
 		return
 
 	var rpath:String = get_script().resource_path
-	var cmd_dir:String = rpath.get_base_dir().path_join(
-			"command_server"
-	)
+	var cmd_dir:String = rpath.get_base_dir().path_join( "command_server" )
 	var added:int = cs.call( &"register_commands_from_path", cmd_dir, CS_OWNER )
 	_cs_plugin = cs
 	if cs.has_signal( &"commands_reloaded" ):
 		_cs_reloaded_cb = _on_command_server_reloaded
 		if not cs.is_connected( &"commands_reloaded", _cs_reloaded_cb ):
-			@warning_ignore("return_value_discarded")
-			cs.connect( &"commands_reloaded", _cs_reloaded_cb )
+			var err:Error = cs.connect( &"commands_reloaded", _cs_reloaded_cb )
+			if err != OK:
+				push_error( "TestRunner: connect commands_reloaded failed: %d" % err )
 	print( "TestRunner: registered %d command(s) with Command Server" % added )
 
 
@@ -105,28 +104,30 @@ func _find_command_server() -> EditorPlugin:
 	var helper:Script = load(
 			"res://addons/enetheru.command-server/command_server.gd"
 	) as Script
-	if helper != null and helper.has_method( &"get_command_server_plugin" ):
+	if is_instance_valid( helper ) \
+	and helper.has_method( &"get_command_server_plugin" ):
 		var found:Variant = helper.call( &"get_command_server_plugin" )
 		if found is EditorPlugin:
 			return found
 	var base:Control = EditorInterface.get_base_control()
-	if base == null:
+	if not is_instance_valid( base ):
 		return null
 	return _find_cs_in_tree( base.get_tree().root )
 
 
 func _find_cs_in_tree( n:Node ) -> EditorPlugin:
-	if n == null:
+	if not is_instance_valid( n ):
 		return null
 	if n is EditorPlugin:
-		var scr:Script = n.get_script()
-		if scr != null:
+		var p:EditorPlugin = n as EditorPlugin
+		var scr:Script = p.get_script()
+		if is_instance_valid( scr ):
 			var path:String = scr.resource_path
 			if path.ends_with( "command_server.gd" ) \
 			or path.contains( "enetheru.command-server/command_server.gd" ):
-				return n as EditorPlugin
+				return p
 	for c:Node in n.get_children():
 		var found:EditorPlugin = _find_cs_in_tree( c )
-		if found != null:
+		if is_instance_valid( found ):
 			return found
 	return null

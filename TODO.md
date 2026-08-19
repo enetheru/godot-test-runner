@@ -28,6 +28,7 @@
 - [ ] Add a stop button somewhere for long running tests.
 
 ## Other
+- [ ] Second `TESTS_RUN` after `@tool`/`class_name` reparse can hard-crash the editor (see `reports/2026-08-18_215200_tests-run-second-batch-editor-crash.md`)
 - [ ] Project based settings would be nice
 - [ ] Robust example folder to showcase the features
 - [ ] threaded file loading
