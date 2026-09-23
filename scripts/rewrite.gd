@@ -1,7 +1,7 @@
 @tool
 extends EditorScript
 
-var test_base_path : String = 'res://addons/test_runner/TestBase.gd'
+var test_base_path : String = 'res://addons/enetheru.test-runner/TestBase.gd'
 
 var header_replacement:String ="# This script is a copy of TestBase.gd
 class_name PlayBase

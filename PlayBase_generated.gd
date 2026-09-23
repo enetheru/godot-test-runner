@@ -1,7 +1,8 @@
 # This script is a copy of TestBase.gd
+@abstract
 class_name PlayBase
 extends Node
-var cycleref : Node
+var cycleref:Node
 
 
 #           ████ ███    ███ ██████   ██████  ██████  ████████ ███████          #
@@ -13,7 +14,11 @@ func                        _________IMPORTS_________              ()->void:pass
 
 const Shared = preload('scripts/shared.gd')
 const TestResult = Shared.TestResult
+
+## NOTE: Dont forget, OK is 1, FAIL is 0. Which is backwards for the standard
+## case for reasons.
 const RetCode = Shared.RetCode
+
 
 #██████  ███████ ███████ ██ ███    ██ ██ ████████ ██  ██████  ███    ██ ███████#
 #██   ██ ██      ██      ██ ████   ██ ██    ██    ██ ██    ██ ████   ██ ██     #
@@ -23,10 +28,38 @@ const RetCode = Shared.RetCode
 func                        _______DEFINITIONS_______              ()->void:pass
 
 ## Handy Constants
-const u32 = 2083138172				#= |**|
-const u32_ = 2084585596				#= |@@|
-const u64 = 8947009970309311100		#= |******|
-const u64_ = 8953226703912583292	#= |@@@@@@|
+const u32: int = 2083138172				#= |**|
+const u32_: int = 2084585596				#= |@@|
+const u64: int = 8947009970309311100		#= |******|
+const u64_: int = 8953226703912583292	#= |@@@@@@|
+
+static var op_string:PackedStringArray = [
+	'==', #  0: OP_EQUAL - Equality operator (==).
+	'!=', #  1: OP_NOT_EQUAL - Inequality operator (!=).
+	'<',  #  2: OP_LESS - Less than operator (<).
+	'<=', #  3: OP_LESS_EQUAL - Less than or equal operator (<=).
+	'>',  #  4: OP_GREATER - Greater than operator (>).
+	'>=', #  5: OP_GREATER_EQUAL - Greater than or equal operator (>=).
+	'+',  #  6: OP_ADD - Addition operator (+).
+	'-',  #  7: OP_SUBTRACT - Subtraction operator (-).
+	'*',  #  8: OP_MULTIPLY - Multiplication operator (*).
+	'/',  #  9: OP_DIVIDE - Division operator (/).
+	'-',  # 10: OP_NEGATE - Unary negation operator (-).
+	'+',  # 11: OP_POSITIVE - Unary plus operator (+).
+	'%',  # 12: OP_MODULE - Remainder/modulo operator (%).
+	'**', # 13: OP_POWER - Power operator (**).
+	'<<', # 14: OP_SHIFT_LEFT - Left shift operator (<<).
+	'>>', # 15: OP_SHIFT_RIGHT - Right shift operator (>>).
+	'&',  # 16: OP_BIT_AND - Bitwise AND operator (&).
+	'|',  # 17: OP_BIT_OR - Bitwise OR operator (|).
+	'^',  # 18: OP_BIT_XOR - Bitwise XOR operator (^).
+	'~',  # 19: OP_BIT_NEGATE - Bitwise NOT operator (~).
+	'&&', # 20: OP_AND - Logical AND operator (and or &&).
+	'||', # 21: OP_OR - Logical OR operator (or or ||).
+	'',   # 22: OP_XOR - Logical XOR operator (not implemented in GDScript).
+	'!',  # 23: OP_NOT - Logical NOT operator (not or !).
+	'in', # 24: OP_IN - Logical IN operator (in).
+]
 
 # ██████  ██████   ██████  ██████  ███████ ██████  ████████ ██ ███████ ███████ #
 # ██   ██ ██   ██ ██    ██ ██   ██ ██      ██   ██    ██    ██ ██      ██      #
@@ -35,14 +68,19 @@ const u64_ = 8953226703912583292	#= |@@@@@@|
 # ██      ██   ██  ██████  ██      ███████ ██   ██    ██    ██ ███████ ███████ #
 func                        ________PROPERTIES_______              ()->void:pass
 
-var scene_tree : SceneTree
+var scene_tree:SceneTree
 
-var _verbose : bool = true
-var _debug : bool = false
-var runcode : RetCode = RetCode.TEST_OK
-var output : Array = []
-var max_runtime_s : float = 3
-
+var _verbose:bool = true
+var _debug:bool = false
+var runcode:int = RetCode.TEST_OK
+var output:Array = []
+var max_runtime_s:float = 3
+var timer:Timer
+## True after [signal test_finished] for this run (timeout or normal complete).
+## Makes [method run_test] return on max-runtime even if `_run_test` is stuck.
+var _finished_emitted:bool = false
+## Max-runtime timer won the race; late `_run_test` completion is ignored.
+var _timed_out:bool = false
 
 #            ███████ ██  ██████  ███    ██  █████  ██      ███████             #
 #            ██      ██ ██       ████   ██ ██   ██ ██      ██                  #
@@ -54,9 +92,13 @@ func                        _________SIGNALS_________              ()->void:pass
 signal test_finished
 
 func _on_timer_timeout() -> void:
+	if _finished_emitted:
+		return
+	_timed_out = true
 	runcode = RetCode.TEST_FAILED
 	logp("[color=salmon]Error: Timeout was reached.[/color]")
-	test_finished.emit()
+	_finish_run()
+
 
 #      ██████  ██    ██ ███████ ██████  ██████  ██ ██████  ███████ ███████     #
 #     ██    ██ ██    ██ ██      ██   ██ ██   ██ ██ ██   ██ ██      ██          #
@@ -65,22 +107,21 @@ func _on_timer_timeout() -> void:
 #      ██████    ████   ███████ ██   ██ ██   ██ ██ ██████  ███████ ███████     #
 func                        ________OVERRIDES________              ()->void:pass
 
-# Override this function to perform setup prior to testing.
+## Override this function to perform setup prior to testing.
 func _setup() -> Error:
 	return OK
+
 
 func _cleanup() -> Error:
 	return OK
 
-# This is the function to override in derived test functions.
-func _run_test() -> RetCode:
-	var msg : String = "This function needs to be overridden in a derived script."
-	logp(msg)
-	assert(false, msg)
-	return RetCode.TEST_OK
+
+## This is the function to override in derived test functions.
+@abstract
+func _run_test() -> RetCode
 
 
-# Calling as an editor script
+## Calling as an editor script
 func _run() -> void:
 	# NOTE: Maintain a reference to ourself, because no-one else will.
 	# Without this, we will be cleaned up before we have had time to do any
@@ -109,28 +150,53 @@ func _run() -> void:
 func                        _________METHODS_________              ()->void:pass
 
 func run_test() -> void:
+	print("Processing: ", get_script().resource_path )
+
+	assert( OS.get_thread_caller_id() == OS.get_main_thread_id(),
+		"A run_test() must not be called in a threaded context.\n" + \
+		"TestBase relies on the 'await' keyword and functionality which is." + \
+		"not usable in a threaded context.\n")
+
+	_finished_emitted = false
+	_timed_out = false
+
 	# Format Dictionary
-	var fd : Dictionary
-	scene_tree = get_tree()
+	var fd:Dictionary
+	if scene_tree == null:
+		scene_tree = get_tree()
+
+	if scene_tree == null:
+		var loop:MainLoop = Engine.get_main_loop()
+		if loop is SceneTree:
+			scene_tree = loop
+
+	if scene_tree == null:
+		runcode = RetCode.TEST_FAILED
+		fd = {'color':'tomato', 'msg':'no SceneTree'}
+		logp("[color={color}][b]_run() - {msg}[/b][/color]".format(fd) )
+		_finish_run()
+		return
 
 	# An opportunity for derived scripts to set the maximum run time and other
 	# variables.
 	@warning_ignore('redundant_await')
 	if await _setup() != OK:
+		runcode = RetCode.TEST_FAILED
 		fd = {'color':'tomato', 'msg':'_setup() - FAILED'}
 		logp("[color={color}][b]_run() - {msg}[/b][/color]".format(fd) )
+		_finish_run()
 		return
 
 	# In case of failure of some unforseen way, I want to make sure the name
 	# of our timer node is unique
-	var script : Script = get_script()
-	var test_name : String = script.resource_path.validate_node_name()
+	var script:Script = get_script()
+	var test_name:String = script.resource_path.validate_node_name()
 
 	# Find, or create our timer.
-	var timer : Timer = scene_tree.root.find_child(test_name, false)
-	if timer:
+	var old_timer:Node = scene_tree.root.find_child(test_name, false)
+	if old_timer:
 		logd( "Error: Timer was not removed in last run.")
-		timer.queue_free()
+		old_timer.queue_free()
 
 	timer = Timer.new()
 	timer.name = test_name
@@ -138,13 +204,26 @@ func run_test() -> void:
 	@warning_ignore('return_value_discarded')
 	timer.timeout.connect( _on_timer_timeout )
 
-	# Start the timer, and call the test function and await its finish.
+	# Wall-clock cap. Fires [signal test_finished] so UI / TESTS_RUN / _run
+	# unblock even when `_run_test` is stuck (never-emitted signal, etc.).
 	timer.start(max_runtime_s)
 
-	@warning_ignore('redundant_await')
-	runcode = await _run_test()
+	# Body is a sibling coroutine; this function only waits for finish.
+	_run_test_body.call_deferred()
+	await test_finished
 
-		# printing output.
+
+## Runs `_run_test` + cleanup. No-op tail if max-runtime already finished.
+func _run_test_body() -> void:
+	@warning_ignore('redundant_await')
+	var code:int = await _run_test()
+
+	if _finished_emitted or _timed_out:
+		# Timeout already reported; abandon late completion.
+		return
+
+	runcode = code
+	var fd:Dictionary
 	if runcode == RetCode.TEST_OK:
 		fd = {'color':'yellowgreen', 'msg':'OK'}
 	else:
@@ -154,39 +233,57 @@ func run_test() -> void:
 	if _verbose or _debug:
 		output.reduce(Shared.reducer_to_lines)
 
-	# Cleanup after ourselves.
 	@warning_ignore('redundant_await')
 	if await _cleanup() != OK:
 		fd = {'color':'tomato', 'msg':'_cleanup() - FAILED'}
 		logp("[color={color}][b]_run() - {msg}[/b][/color]".format(fd) )
-	timer.queue_free()
+		if runcode == RetCode.TEST_OK:
+			runcode = RetCode.TEST_FAILED
+
+	if _finished_emitted or _timed_out:
+		return
+	_finish_run()
+
+
+func _finish_run() -> void:
+	if _finished_emitted:
+		return
+	_finished_emitted = true
+	if is_instance_valid(timer):
+		if not timer.is_stopped():
+			timer.stop()
+		timer.queue_free()
+		timer = null
 	test_finished.emit()
 
-func logd( msg : Variant = "" ) -> void:
+
+func logd( msg:Variant = "" ) -> void:
 	if msg is Array:
-		var array : Array = msg
+		var array:Array = msg
 		msg = array.reduce( Shared.reducer_to_lines )
 	if _debug:
 		print_rich( msg )
 		output.append( msg )
 
-func logp( msg : Variant ) -> void:
+
+func logp( msg:Variant ) -> void:
 	if msg is Array:
-		var array : Array = msg
+		var array:Array = msg
 		msg = array.reduce( Shared.reducer_to_lines )
 	if _debug or _verbose: print_rich( msg )
 	output.append( msg )
 
-func sbytes( bytes : PackedByteArray, cols : int = 8 ) -> String:
+
+static func sbytes( bytes:PackedByteArray, cols:int = 8 ) -> String:
 	if bytes.is_empty(): return "Empty"
-	var retval : Array = ["size: %d" % bytes.size()]
+	var retval:Array = ["size: %d" % bytes.size()]
 	var position := 0
 	while true:
-		var slice : PackedByteArray = bytes.slice(position, position + cols)
+		var slice:PackedByteArray = bytes.slice(position, position + cols)
 		if not slice.size(): break
 
 		# new line
-		var line : String = ""
+		var line:String = ""
 		# Position
 		line += "%08X: " % position
 		# bytes as hex pairs
@@ -202,6 +299,10 @@ func sbytes( bytes : PackedByteArray, cols : int = 8 ) -> String:
 
 	return '\n'.join( retval )
 
+
+static func bytes_view( bytes:PackedByteArray, cols:int = 8 ) -> String:
+	return sbytes(bytes, cols)
+
 #                  ████████ ███████ ███████ ████████ ███████                   #
 #                     ██    ██      ██         ██    ██                        #
 #                     ██    █████   ███████    ██    ███████                   #
@@ -209,47 +310,134 @@ func sbytes( bytes : PackedByteArray, cols : int = 8 ) -> String:
 #                     ██    ███████ ███████    ██    ███████                   #
 func                        __________TESTS__________              ()->void:pass
 
-func TEST_EQ( want_v : Variant, got_v : Variant, desc : String = "" ) -> RetCode:
-	if want_v == got_v:
-		logd("TEST_EQ('%s' == '%s'): %s" % [want_v, got_v, desc])
-		return RetCode.TEST_OK
-	var msg := "[b][color=salmon]Failed: '%s'[/color][/b]\nwanted: '%s'\n   got: '%s'" % [desc, want_v, got_v ]
+# test is abstracted so that exceptions trigger a fail.
+func _test_eq( want_v:Variant, got_v:Variant, desc:String = "" ) -> bool:
+	if want_v == got_v: return true
+	var msg:String = '\n'.join([
+		"[b][color=salmon]%s: '%s'[/color][/b]" % [Shared.get_call_site(3), desc],
+		"\twanted: '%s' == got: '%s'" % [want_v, got_v ]])
+	# TODO add the call_site to the error message.
 	output.append.call( msg )
 	if _verbose: print_rich( msg )
+	return false
+
+
+## Returns [enum RetCode] 0(TEST_FAILED) on failure, and 1(TEST_OK) on Success.
+func TEST_EQ_RET( want_v:Variant, got_v:Variant, desc:String = "" ) -> RetCode:
+	logd("TEST_EQ_RET(want:'%s' == got:'%s'): %s" % [want_v, got_v, desc])
+	if _test_eq(want_v, got_v, desc): return RetCode.TEST_OK
+	runcode &= RetCode.TEST_FAILED
 	return RetCode.TEST_FAILED
 
-func TEST_APPROX( want_v : float, got_v : float, desc : String = "" ) -> RetCode:
-	if is_equal_approx(want_v, got_v):
-		logd("TEST_APPROX('%s' ~= '%s'): %s" % [want_v, got_v, desc])
-		return RetCode.TEST_OK
-	var msg := "[b][color=salmon]TEST_EQ Failed: '%s'[/color][/b]\nwanted: '%s'\n   got: '%s'" % [desc, want_v, got_v ]
+
+func TEST_EQ( want_v:Variant, got_v:Variant, desc:String = "") -> void:
+	logd("TEST_EQ(want:'%s' == got:'%s'): %s" % [want_v, got_v, desc])
+	if _test_eq(want_v, got_v, desc): return
+	runcode &= RetCode.TEST_FAILED
+
+
+func _test_approx( want_v:float, got_v:float, desc:String = "" ) -> bool:
+	if is_equal_approx(want_v, got_v): return true
+	var msg:String = '\n'.join([
+		"[b][color=salmon]%s: '%s'[/color][/b]" % [Shared.get_call_site(3), desc],
+		"\twanted: '%s' ~= got: '%s'" % [want_v, got_v ]])
 	output.append.call( msg )
 	if _verbose: print_rich( msg )
+	return false
+
+
+## Returns [enum RetCode] 0(TEST_FAILED) on failure, and 1(TEST_OK) on Success.
+func TEST_APPROX_RET( want_v:float, got_v:float, desc:String = "" ) -> RetCode:
+	logd("TEST_APPROX_RET(want:'%s' ~= got:'%s'): %s" % [want_v, got_v, desc])
+	if _test_approx(want_v, got_v, desc ): return RetCode.TEST_OK
+	runcode &= RetCode.TEST_FAILED
 	return RetCode.TEST_FAILED
 
 
-func TEST_TRUE( value : Variant, desc : String = "" ) -> RetCode:
-	if value:
-		logd("TEST_TRUE('%s'): %s" % [value, desc])
-		return RetCode.TEST_OK
-	var msg : String = "[b][color=salmon]TEST_TRUE Failed: '%s'[/color][/b]\nwanted: true | value != (0 & null)\n   got: '%s'" % [desc, value ]
+func TEST_APPROX( want_v:float, got_v:float, desc:String = "" ) -> void:
+	logd("TEST_APPROX(want:'%s' ~= got:'%s'): %s" % [want_v, got_v, desc])
+	if _test_approx(want_v, got_v, desc ): return
+	runcode &= RetCode.TEST_FAILED
+
+
+func _test_true( value:Variant, desc:String = "" ) -> bool:
+	if value: return true
+	var msg:String = '\n'.join([
+		"[b][color=salmon]%s: '%s'[/color][/b]" % [Shared.get_call_site(3), desc],
+		"\twanted: true | value != (0 & null)",
+		"\tgot: '%s'" % value])
 	output.append.call( msg )
 	if _verbose: print_rich( msg )
+	return false
+
+
+## Returns [enum RetCode] 0(TEST_FAILED) on failure, and 1(TEST_OK) on Success.
+func TEST_TRUE_RET( value:Variant, desc:String = "" ) -> RetCode:
+	logd("TEST_TRUE_RET('%s'): %s" % [value, desc])
+	if _test_true( value, desc ): return RetCode.TEST_OK
+	runcode &= RetCode.TEST_FAILED
 	return RetCode.TEST_FAILED
 
-func TEST_OP( val1 : Variant, op : int, val2 : Variant, desc : String = ""  ) -> RetCode:
-	var op_s : String
-	var op_result : bool = false
+
+func TEST_TRUE( value:Variant, desc:String = "" ) -> void:
+	logd("TEST_TRUE('%s'): %s" % [value, desc])
+	if _test_true( value, desc ): return
+	runcode &= RetCode.TEST_FAILED
+
+
+func _test_false( value:Variant, desc:String = "" ) -> bool:
+	if not value: return true
+	var msg:String = '\n'.join([
+		"[b][color=salmon]%s: '%s'[/color][/b]" % [Shared.get_call_site(3), desc],
+		"\twanted: false | value == (0 & null)",
+		"\tgot: '%s'" % value])
+	output.append.call( msg )
+	if _verbose: print_rich( msg )
+	return false
+
+
+## Returns [enum RetCode] 0(TEST_FAILED) on failure, and 1(TEST_OK) on Success.
+func TEST_FALSE_RET( value:Variant, desc:String = "" ) -> RetCode:
+	logd("TEST_FALSE_RET('%s'): %s" % [value, desc])
+	if _test_false( value, desc ): return RetCode.TEST_OK
+	runcode &= RetCode.TEST_FAILED
+	return RetCode.TEST_FAILED
+
+
+func TEST_FALSE( value:Variant, desc:String = "" ) -> void:
+	logd("TEST_FALSE('%s'): %s" % [value, desc])
+	if _test_false( value, desc ): return
+	runcode &= RetCode.TEST_FAILED
+
+
+func _test_op( val1:Variant, op:int, val2:Variant, desc:String = ""  ) -> bool:
+	var op_result:bool = false
 	match op:
-		OP_EQUAL:  op_s='==';  op_result = val1 == val2
-		OP_NOT_EQUAL: op_s='!='; op_result = val1 != val2
-		OP_GREATER_EQUAL: op_s='>='; op_result = val1 >= val2
-		OP_GREATER:  op_s='>';  op_result = val1 > val2
-		OP_LESS_EQUAL: op_s='<='; op_result = val1 <= val2
-		OP_LESS:  op_s='<';  op_result = val1 < val2
-	if op_result: return RetCode.TEST_OK
-	var msg : String = "[b][color=salmon]TEST_OP Failed: '%s'[/color][/b]" % desc
-	msg += "\n\tOp: ('%s' %s '%s') is false" % [val1, op_s, val2]
+		OP_EQUAL: op_result = val1 == val2
+		OP_NOT_EQUAL: op_result = val1 != val2
+		OP_GREATER_EQUAL: op_result = val1 >= val2
+		OP_GREATER: op_result = val1 > val2
+		OP_LESS_EQUAL: op_result = val1 <= val2
+		OP_LESS: op_result = val1 < val2
+	if op_result: return true
+
+	var msg:String = '\n'.join([
+		"[b][color=salmon]%s: '%s'[/color][/b]" % [Shared.get_call_site(3), desc],
+		"\tOp: ('%s' %s '%s') is false" % [val1, op_string[op], val2]])
 	output.append.call( msg )
 	if _verbose: print_rich( msg )
+	return false
+
+
+## Returns [enum RetCode] 0(TEST_FAILED) on failure, and 1(TEST_OK) on Success.
+func TEST_OP_RET( val1:Variant, op:int, val2:Variant, desc:String = ""  ) -> RetCode:
+	logd("TEST_OP_RET('%s', %s, '%s'): %s" % [val1, op_string[op], val2, desc])
+	if _test_op(val1, op, val2, desc): return RetCode.TEST_OK
+	runcode &= RetCode.TEST_FAILED
 	return RetCode.TEST_FAILED
+
+
+func TEST_OP( val1:Variant, op:int, val2:Variant, desc:String = ""  ) -> void:
+	logd("TEST_OP('%s', %s, '%s'): %s" % [val1, op_string[op], val2, desc])
+	if _test_op(val1, op, val2, desc): return
+	runcode &= RetCode.TEST_FAILED
