@@ -6,14 +6,19 @@ const CHECKLIST = preload( "res/checklist.svg" )
 const ServiceScript = preload( "test_runner_service.gd" )
 
 const CS_OWNER:String = "enetheru.test-runner"
+const _ExportPlugin = preload( "export_plugin.gd" )
 
 var main_panel_instance:Control
 var service:Node = null
 var _cs_plugin:EditorPlugin = null
 var _cs_reloaded_cb:Callable = Callable()
+var _export_plugin:EditorExportPlugin = null
 
 
 func _enter_tree() -> void:
+	_export_plugin = _ExportPlugin.new()
+	add_export_plugin( _export_plugin )
+
 	service = ServiceScript.new()
 	service.name = "TestRunnerService"
 	add_child( service )
@@ -28,6 +33,9 @@ func _enter_tree() -> void:
 
 
 func _exit_tree() -> void:
+	if _export_plugin:
+		remove_export_plugin( _export_plugin )
+		_export_plugin = null
 	_unregister_from_command_server()
 	if main_panel_instance:
 		main_panel_instance.queue_free()
