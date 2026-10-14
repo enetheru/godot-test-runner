@@ -1,2 +1,4 @@
 # Command-server bridge. The rest of this addon stays out of this list.
 command_server/
+export_plugin.gd
+export_plugin.gd.uid

@@ -4,16 +4,16 @@ extends EditorExportPlugin
 ##
 ## Patterns are [method String.match] globs relative to the addon, or path
 ## prefixes when they end with [code]/[/code]. They never apply outside this
-## addon. [code]*[/code] skips the whole addon.
+## addon. [code]*[/code] skips the whole addon. This script and its
+## [code].uid[/code] are always skipped.
 
-const Self:Resource = preload("export_plugin.gd")
-
-var path_prefix:String = Self.resource_path.get_base_dir() + "/"
 var ignore_patterns:Array[String] = []
 
 
 func _get_name() -> String:
-	return "TestRunnerExportPlugin"
+	# Must sort before the built-in "GDScript" exporter. It remaps .gd
+	# files and stops the plugin loop, so a later skip() never runs.
+	return "EnetheruTestRunnerExport"
 
 
 func _export_begin(
@@ -26,8 +26,24 @@ func _export_begin(
 	_load_ignore_file()
 
 
+func _addon_root() -> String:
+	# resource_path is empty while this script's member initializers run.
+	var script:Script = get_script()
+	if script == null:
+		return ""
+	var base := script.resource_path.get_base_dir()
+	if base.is_empty():
+		return ""
+	return base + "/"
+
+
 func _load_ignore_file() -> void:
-	var path:String = path_prefix + ".exportignore"
+	var root := _addon_root()
+	if root.is_empty():
+		push_warning("TestRunnerExportPlugin._load_ignore_file:",
+			" addon root is empty")
+		return
+	var path:String = root + ".exportignore"
 	if not FileAccess.file_exists(path):
 		return
 	var file:FileAccess = FileAccess.open(path, FileAccess.READ)
@@ -45,13 +61,21 @@ func _export_file(
 			path:String,
 			_type:String,
 			_features:PackedStringArray ) -> void:
-	if not path.begins_with(path_prefix):
+	var root := _addon_root()
+	if root.is_empty() or not path.begins_with(root):
 		return
-	var relative := path.trim_prefix(path_prefix)
-	for pattern:String in ignore_patterns:
+	var relative := path.trim_prefix(root)
+	if relative == "export_plugin.gd" or relative == "export_plugin.gd.uid":
+		skip()
+		return
+	for raw:String in ignore_patterns:
+		var pattern := raw
 		if pattern.begins_with("./"):
 			pattern = pattern.trim_prefix("./")
-		var prefix := pattern.trim_suffix("/")
-		if relative.match(pattern) or (not prefix.is_empty() and relative.begins_with(prefix)):
+		if pattern.is_empty():
+			continue
+		var dir := pattern.trim_suffix("/")
+		if relative.match(pattern) or relative == dir \
+				or (not dir.is_empty() and relative.begins_with(dir + "/")):
 			skip()
 			return
