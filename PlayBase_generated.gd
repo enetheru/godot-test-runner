@@ -208,9 +208,21 @@ func run_test() -> void:
 	# unblock even when `_run_test` is stuck (never-emitted signal, etc.).
 	timer.start(max_runtime_s)
 
-	# Body is a sibling coroutine; this function only waits for finish.
-	_run_test_body.call_deferred()
+	# Sibling coroutine so a stuck `_run_test` still ends on the timer.
+	# call_deferred runs inside a message-queue flush, and EditorProgress
+	# refuses to open a task there. Launch waits for process_frame, which
+	# SceneTree emits before that flush, then runs the body on that stack.
+	_launch_test_body.call_deferred()
 	await test_finished
+
+
+## Reaches `_run_test` outside a message-queue flush.
+func _launch_test_body() -> void:
+	await scene_tree.process_frame
+	if _finished_emitted or _timed_out:
+		return
+	@warning_ignore('redundant_await')
+	await _run_test_body()
 
 
 ## Runs `_run_test` + cleanup. No-op tail if max-runtime already finished.
