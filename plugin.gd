@@ -13,6 +13,8 @@ var service:Node = null
 var _cs_plugin:EditorPlugin = null
 var _cs_reloaded_cb:Callable = Callable()
 var _export_plugin:EditorExportPlugin = null
+## Set by the gdflatbuffers libtracy editor test. A normal editor leaves it unset.
+var _headless_arm_tries:int = 0
 
 
 func _enter_tree() -> void:
@@ -30,6 +32,66 @@ func _enter_tree() -> void:
 	if main_panel_instance.has_method( &"bind_service" ):
 		main_panel_instance.call( &"bind_service", service )
 	call_deferred( &"_register_with_command_server" )
+	# -s cannot run an EditorScript: main.cpp requires a SceneTree or MainLoop.
+	# This process is already the editor. The runner sets the env only on that
+	# launch, so an export or a normal editor session does not take this path.
+	if OS.get_environment( "GDFB_HEADLESS_TESTS" ) == "1":
+		call_deferred( &"_arm_headless_tests" )
+
+
+func _arm_headless_tests() -> void:
+	var fs := EditorInterface.get_resource_filesystem()
+	if fs.is_scanning():
+		if not fs.filesystem_changed.is_connected( _begin_headless_tests ):
+			fs.filesystem_changed.connect( _begin_headless_tests, CONNECT_ONE_SHOT )
+		return
+	_headless_arm_tries += 1
+	# Plugin init runs before the first scan starts. Give that scan a moment,
+	# then run anyway so a missing scan cannot hang the capture.
+	if _headless_arm_tries > 50:
+		_begin_headless_tests()
+		return
+	get_tree().create_timer( 0.1 ).timeout.connect( _arm_headless_tests )
+
+
+func _begin_headless_tests() -> void:
+	var fs := EditorInterface.get_resource_filesystem()
+	if fs.is_scanning():
+		if not fs.filesystem_changed.is_connected( _begin_headless_tests ):
+			fs.filesystem_changed.connect( _begin_headless_tests, CONNECT_ONE_SHOT )
+		return
+	if service == null:
+		push_error( "GDFB_HEADLESS_TESTS: TestRunnerService is missing" )
+		get_tree().quit( 1 )
+		return
+	print( "GDFB_HEADLESS_TESTS: running res://tests" )
+	var resolved:Dictionary = service.call( &"resolve_targets", "all" )
+	var err := str( resolved.get( &"error", "" ) )
+	if not err.is_empty():
+		push_error( err )
+		get_tree().quit( 1 )
+		return
+	var paths:PackedStringArray = resolved.get( &"paths", PackedStringArray() )
+	if paths.is_empty():
+		push_error( "GDFB_HEADLESS_TESTS: no tests" )
+		get_tree().quit( 1 )
+		return
+	service.call( &"begin_run", paths, {}, _headless_tests_done )
+
+
+func _headless_tests_done( results:Dictionary ) -> void:
+	var ran := int( results.get( "ran", 0 ) )
+	var failed := int( results.get( "failed", 0 ) )
+	print( "GDFB_HEADLESS_TESTS: ran %d failed %d" % [ran, failed] )
+	var err := str( results.get( "error", "" ) )
+	if not err.is_empty() or ran == 0:
+		if not err.is_empty():
+			push_error( err )
+		get_tree().quit( 1 )
+		return
+	# Individual failures stay in the log. Exit 0 means the editor finished
+	# the batch. The runner's zone check is the capture assertion.
+	get_tree().quit( 0 )
 
 
 func _exit_tree() -> void:
