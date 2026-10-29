@@ -171,14 +171,15 @@ func _unregister_from_command_server() -> void:
 
 
 func _find_command_server() -> EditorPlugin:
-	var helper:Script = load(
-			"res://addons/enetheru.command-server/command_server.gd"
-	) as Script
-	if is_instance_valid( helper ) \
-	and helper.has_method( &"get_command_server_plugin" ):
-		var found:Variant = helper.call( &"get_command_server_plugin" )
-		if found is EditorPlugin:
-			return found
+	# load() of a missing path is an engine error. The addon is optional.
+	var helper_path:String = "res://addons/enetheru.command-server/command_server.gd"
+	if FileAccess.file_exists( helper_path ):
+		var helper:Script = load( helper_path ) as Script
+		if is_instance_valid( helper ) \
+		and helper.has_method( &"get_command_server_plugin" ):
+			var found:Variant = helper.call( &"get_command_server_plugin" )
+			if found is EditorPlugin:
+				return found
 	var base:Control = EditorInterface.get_base_control()
 	if not is_instance_valid( base ):
 		return null
