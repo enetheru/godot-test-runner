@@ -7,6 +7,8 @@ extends CommandServerTool
 # unreliable. Service is a Node and completes via begin_run → on_done.
 
 const Common = preload( "_tests_common.gd" )
+const _ConfirmScene = preload( "../../enetheru.command-server/ui/confirm.tscn" )
+const _ConfirmScript = preload( "../../enetheru.command-server/ui/confirm.gd" )
 
 
 func get_command_name() -> String:
@@ -173,37 +175,11 @@ func _show_confirm_dialog(
 		on_done.call( "ERROR: no editor base control" )
 		return
 
-	const WIN_SIZE:Vector2i = Vector2i( 560, 320 )
-	const WIN_MIN:Vector2i = Vector2i( 400, 240 )
+	var dlg:Window = _ConfirmScene.instantiate() as Window
+	if dlg == null:
+		on_done.call( "ERROR: Failed to instantiate confirm dialog" )
+		return
 
-	var win:Window = Window.new()
-	win.title = "Command Server: Run tests?"
-	win.exclusive = true
-	win.unresizable = false
-	win.wrap_controls = false
-	win.min_size = WIN_MIN
-	win.size = WIN_SIZE
-	win.initial_position = Window.WINDOW_INITIAL_POSITION_CENTER_MAIN_WINDOW_SCREEN
-
-	var margin:MarginContainer = MarginContainer.new()
-	margin.set_anchors_preset( Control.PRESET_FULL_RECT )
-	margin.set_offsets_preset( Control.PRESET_FULL_RECT )
-	margin.add_theme_constant_override( &"margin_left", 10 )
-	margin.add_theme_constant_override( &"margin_right", 10 )
-	margin.add_theme_constant_override( &"margin_top", 10 )
-	margin.add_theme_constant_override( &"margin_bottom", 10 )
-
-	var root:VBoxContainer = VBoxContainer.new()
-	root.set_anchors_preset( Control.PRESET_FULL_RECT )
-	root.set_offsets_preset( Control.PRESET_FULL_RECT )
-	root.add_theme_constant_override( &"separation", 8 )
-
-	var info:Label = Label.new()
-	info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	info.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	info.clip_text = false
-	info.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
 	var preview:Array = []
 	var max_show:int = mini( 12, paths.size() )
 	for i:int in max_show:
@@ -215,76 +191,55 @@ func _show_confirm_dialog(
 			if opts.get( "parallel", false )
 			else "Runs sequentially on the editor main thread (default)."
 	)
-	info.text = (
+	var message:String = (
 			"A remote client requested TESTS_RUN.\n"
 			+ "%s\n\n"
 			+ "Scripts:\n%s\n\n"
 			+ "%s May crash the editor."
 	) % [label, "\n".join( preview ), mode_line]
 
-	var buttons:HBoxContainer = HBoxContainer.new()
-	buttons.alignment = BoxContainer.ALIGNMENT_END
-	buttons.size_flags_vertical = Control.SIZE_SHRINK_END
-	buttons.add_theme_constant_override( &"separation", 8 )
-	var cancel_btn:Button = Button.new()
-	cancel_btn.text = "Cancel"
-	var run_btn:Button = Button.new()
-	run_btn.text = "Run tests"
-	buttons.add_child( cancel_btn )
-	buttons.add_child( run_btn )
+	dlg.call(
+			&"configure",
+			"Command Server: Run tests?",
+			message,
+			"Run tests",
+			"",
+			Vector2i( 520, 320 ) )
 
-	root.add_child( info )
-	root.add_child( buttons )
-	margin.add_child( root )
-	win.add_child( margin )
-
-	var editor_win:Window = host.get_window()
-	if editor_win != null:
-		editor_win.add_child( win )
-	else:
-		host.add_child( win )
-
-	if plugin != null and plugin.has_method( &"track_window" ):
-		plugin.call( &"track_window", win )
-
-	var finished:Array = [false]
-
-	var finish := func( approved:bool ) -> void:
-		if finished[0]:
-			return
-		finished[0] = true
-		if plugin != null and plugin.has_method( &"untrack_window" ):
-			plugin.call( &"untrack_window", win )
-		if is_instance_valid( win ):
-			win.hide()
-			win.queue_free()
-		if not approved:
-			on_done.call( "ERROR: User cancelled TESTS_RUN" )
-			return
-		if not is_instance_valid( svc ):
-			on_done.call( "ERROR: TestRunner service gone" )
-			return
-		# Snapshot the existing session_logger ring. Do NOT OS.add_logger —
-		# a second Logger around @tool TestBase batches deadlocked / crashed.
-		var bus:RefCounted = _event_bus( plugin )
-		var since_seq:int = _bus_seq( bus )
-		svc.call(
-				&"begin_run",
-				paths,
-				opts,
-				func( results:Dictionary ) -> void:
-					# Off the TestBase / Logger stack. Reading the bus (or
-					# stringifying) here deadlocks session_logger.emit vs since.
-					_complete_run.call_deferred(
-							svc, bus, since_seq, results, on_done )
-		)
-
-	var _c1:int = run_btn.pressed.connect( func() -> void: finish.call( true ) )
-	var _c2:int = cancel_btn.pressed.connect( func() -> void: finish.call( false ) )
-	var _c3:int = win.close_requested.connect( func() -> void: finish.call( false ) )
-
-	win.popup()
-	run_btn.grab_focus()
+	var _c:int = dlg.connect(
+			&"finished",
+			func( approved:bool, response:String = "" ) -> void:
+				if not approved:
+					on_done.call( _ConfirmScript.with_response(
+							"ERROR: User cancelled TESTS_RUN",
+							response ) )
+					return
+				if not is_instance_valid( svc ):
+					on_done.call( _ConfirmScript.with_response(
+							"ERROR: TestRunner service gone",
+							response ) )
+					return
+				# Snapshot the existing session_logger ring. Do NOT OS.add_logger —
+				# a second Logger around @tool TestBase batches deadlocked / crashed.
+				var bus:RefCounted = _event_bus( plugin )
+				var since_seq:int = _bus_seq( bus )
+				svc.call(
+						&"begin_run",
+						paths,
+						opts,
+						func( results:Dictionary ) -> void:
+							# Off the TestBase / Logger stack. Reading the bus (or
+							# stringifying) here deadlocks session_logger.emit vs since.
+							_complete_run.call_deferred(
+									svc,
+									bus,
+									since_seq,
+									results,
+									response,
+									on_done )
+				)
+	)
+	dlg.call( &"open", plugin, host )
 
 
 func _event_bus( plugin:EditorPlugin ) -> RefCounted:
@@ -307,6 +262,7 @@ func _complete_run(
 		bus:RefCounted,
 		since_seq:int,
 		results:Dictionary,
+		response:String,
 		on_done:Callable
 ) -> void:
 	var lines:PackedStringArray = _bus_log_lines( bus, since_seq )
@@ -315,8 +271,10 @@ func _complete_run(
 		reply = str(
 				svc.call( &"format_results_reply", results, "TESTS_RUN complete" )
 		)
+	reply = _reply_with_log( reply, lines )
+	reply = _ConfirmScript.with_response( reply, response )
 	if on_done.is_valid():
-		on_done.call( _reply_with_log( reply, lines ) )
+		on_done.call( reply )
 
 
 func _bus_log_lines( bus:RefCounted, since_seq:int ) -> PackedStringArray:

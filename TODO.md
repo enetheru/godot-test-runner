@@ -20,6 +20,7 @@
 	- [ ] clear others
 - [ ] Add field in the test for changing the title.
 - [ ] option to enable bbcode?
+
 ## Controls
 - [ ] It appears that filters, and folder do not mean anything.
 - [ ] icons in the middle are not readable I think that perhaps i can make a background tricolour fill for untested/good/bad
