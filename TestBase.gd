@@ -148,6 +148,27 @@ func _run() -> void:
 #         ██      ██ ███████    ██    ██   ██  ██████  ██████  ███████         #
 func                        _________METHODS_________              ()->void:pass
 
+## Assign [member scene_tree] from the editor base, or from the main loop.
+func _ensure_scene_tree() -> Error:
+	# The editor base is the tree while a tool script runs. Otherwise use the main loop.
+	if scene_tree != null:
+		return OK
+
+	if Engine.is_editor_hint() \
+	and DisplayServer.get_name().to_lower() != "headless":
+		var base:Object = EditorInterface.get_base_control()
+		if base:
+			scene_tree = base.call(&'get_tree')
+
+	if scene_tree == null:
+		var loop:MainLoop = Engine.get_main_loop()
+		if loop is SceneTree:
+			scene_tree = loop
+	if scene_tree == null:
+		return ERR_UNCONFIGURED
+	return OK
+
+
 func run_test() -> void:
 	print("Processing: ", get_script().resource_path )
 
@@ -161,18 +182,8 @@ func run_test() -> void:
 
 	# Format Dictionary
 	var fd:Dictionary
-	if scene_tree == null:
-		if Engine.is_editor_hint() and DisplayServer.get_name().to_lower() != "headless":
-			var base:Object = EditorInterface.get_base_control()
-			if base:
-				scene_tree = base.call(&'get_tree')
-
-		if scene_tree == null:
-			var loop:MainLoop = Engine.get_main_loop()
-			if loop is SceneTree:
-				scene_tree = loop
-
-	if scene_tree == null:
+	var tree_ready:Error = _ensure_scene_tree()
+	if tree_ready != OK:
 		runcode = RetCode.TEST_FAILED
 		fd = {'color':'tomato', 'msg':'no SceneTree'}
 		logp("[color={color}][b]_run() - {msg}[/b][/color]".format(fd) )
@@ -210,20 +221,19 @@ func run_test() -> void:
 	# unblock even when `_run_test` is stuck (never-emitted signal, etc.).
 	timer.start(max_runtime_s)
 
-	# Sibling coroutine so a stuck `_run_test` still ends on the timer.
 	# call_deferred runs inside a message-queue flush, and EditorProgress
-	# refuses to open a task there. Launch waits for process_frame, which
-	# SceneTree emits before that flush, then runs the body on that stack.
+	# refuses to open a task there.
 	_launch_test_body.call_deferred()
 	await test_finished
 
 
 ## Reaches `_run_test` outside a message-queue flush.
 func _launch_test_body() -> void:
-	await scene_tree.process_frame
-	if _finished_emitted or _timed_out:
+	#await scene_tree.process_frame
+	if _finished_emitted \
+	or _timed_out:
 		return
-	@warning_ignore('redundant_await')
+	# we initiate a sibling coroutine so a stuck `_run_test` still ends on the timer.
 	await _run_test_body()
 
 
@@ -232,7 +242,8 @@ func _run_test_body() -> void:
 	@warning_ignore('redundant_await')
 	var code:int = await _run_test()
 
-	if _finished_emitted or _timed_out:
+	if _finished_emitted \
+	or _timed_out:
 		# Timeout already reported; abandon late completion.
 		return
 
@@ -254,7 +265,8 @@ func _run_test_body() -> void:
 		if runcode == RetCode.TEST_OK:
 			runcode = RetCode.TEST_FAILED
 
-	if _finished_emitted or _timed_out:
+	if _finished_emitted \
+	or _timed_out:
 		return
 	_finish_run()
 
