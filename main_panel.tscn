@@ -81,6 +81,10 @@ size_flags_horizontal = 3
 size_flags_vertical = 0
 alignment = 2
 
+[node name="Tracy" type="CheckButton" parent="Buttons/Right"]
+layout_mode = 2
+text = "Tracy"
+
 [node name="Verbose" type="CheckButton" parent="Buttons/Right"]
 layout_mode = 2
 text = "Verbose"
@@ -167,6 +171,7 @@ autowrap_mode = 0
 [connection signal="pressed" from="Buttons/Left/Reload" to="." method="_on_reload_pressed"]
 [connection signal="pressed" from="Buttons/Left/Filters" to="." method="_on_filters_pressed"]
 [connection signal="pressed" from="Buttons/Left/Folder" to="." method="_on_folder_pressed"]
+[connection signal="toggled" from="Buttons/Right/Tracy" to="." method="_on_tracy_toggled"]
 [connection signal="toggled" from="Buttons/Right/Verbose" to="." method="_on_verbose_toggled"]
 [connection signal="toggled" from="Buttons/Right/Debug" to="." method="_on_debug_toggled"]
 [connection signal="pressed" from="Buttons/Right/ClearResults" to="." method="_on_clear_results_pressed"]

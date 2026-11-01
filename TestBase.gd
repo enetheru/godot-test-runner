@@ -79,6 +79,17 @@ var timer:Timer
 var _finished_emitted:bool = false
 ## Max-runtime timer won the race; late `_run_test` completion is ignored.
 var _timed_out:bool = false
+## Host assigns this before runs. [method run_test] calls it with this instance
+## when [member pre_run] is still empty, after the scene tree is ready and before [method _setup].
+static var prepare_run:Callable = Callable()
+## After the scene tree is ready and before [method _setup]. Empty skips it.
+## [constant OK] or null continues. Any other int fails the run and skips the procedure.
+var pre_run:Callable = Callable()
+## After the procedure, including a timeout, before [method run_test] returns.
+## Empty skips it. A non-OK int turns a passing run into a failure.
+var post_run:Callable = Callable()
+## Timeline mark used by [method _profiler_message]. Empty makes that call a no-op.
+var profiler_message:Callable = Callable()
 
 #            ███████ ██  ██████  ███    ██  █████  ██      ███████             #
 #            ██      ██ ██       ████   ██ ██   ██ ██      ██                  #
@@ -190,6 +201,18 @@ func run_test() -> void:
 		_finish_run()
 		return
 
+	# Outside the procedure. A host can install capture here, or assign [member pre_run] itself.
+	if not pre_run.is_valid() and prepare_run.is_valid():
+		prepare_run.call(self)
+
+	var pre_code:Error = await _call_hook(pre_run)
+	if pre_code != OK:
+		runcode = RetCode.TEST_FAILED
+		fd = {'color':'tomato', 'msg':'pre_run - FAILED'}
+		logp("[color={color}][b]_run() - {msg}[/b][/color]".format(fd) )
+		_finish_run()
+		return
+
 	# An opportunity for derived scripts to set the maximum run time and other
 	# variables.
 	@warning_ignore('redundant_await')
@@ -225,6 +248,30 @@ func run_test() -> void:
 	# refuses to open a task there.
 	_launch_test_body.call_deferred()
 	await test_finished
+
+	var post_code:Error = await _call_hook(post_run)
+	if post_code != OK and runcode == RetCode.TEST_OK:
+		runcode = RetCode.TEST_FAILED
+		fd = {'color':'tomato', 'msg':'post_run - FAILED'}
+		logp("[color={color}][b]_run() - {msg}[/b][/color]".format(fd) )
+
+
+## Await [param hook] when it is set. Null and non-ints count as [constant OK].
+func _call_hook(hook:Callable) -> Error:
+	if not hook.is_valid():
+		return OK
+	@warning_ignore('redundant_await')
+	var result:Variant = await hook.call()
+	if typeof(result) != TYPE_INT or result == OK:
+		return OK
+	return FAILED
+
+
+## Forward [param text] when a host installed [member profiler_message].
+func _profiler_message(text:String) -> void:
+	if not profiler_message.is_valid():
+		return
+	profiler_message.call(text)
 
 
 ## Reaches `_run_test` outside a message-queue flush.

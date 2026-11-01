@@ -60,6 +60,7 @@ func                        ________PROPERTIES_______              ()->void:pass
 # Top Row Center
 @onready var stats_counter: RichTextLabel = $Buttons/Center/StatsCounter
 # Top Row Right
+@onready var tracy_btn: CheckButton = $Buttons/Right/Tracy
 @onready var verbose_btn: CheckButton = $Buttons/Right/Verbose
 @onready var debug_btn: CheckButton = $Buttons/Right/Debug
 @onready var clear_btn: Button = $Buttons/Right/ClearResults
@@ -79,6 +80,7 @@ var test_list:Array[TestDef]
 var test_selection:Dictionary = {}
 var test_verbose:bool = false
 var test_debug:bool = false
+var test_tracy:bool = false
 ## Optional headless service (Command Server). UI still owns Tree/InfoBoxes.
 var _service:Node = null
 
@@ -121,6 +123,15 @@ func _on_filters_pressed() -> void:
 
 func _on_folder_pressed() -> void:
 	pass # Replace with function body.
+
+
+func _on_tracy_toggled(toggled_on: bool) -> void:
+	test_tracy = toggled_on
+	var installer:Callable = Callable()
+	if toggled_on:
+		installer = TracyCapture.install
+	TestBase.prepare_run = installer
+	PlayBase.prepare_run = installer
 
 
 func _on_verbose_toggled(toggled_on: bool) -> void:
@@ -200,6 +211,7 @@ func _on_tests_tree_gui_input(event: InputEvent) -> void:
 func                        ________OVERRIDES________              ()->void:pass
 
 func _ready() -> void:
+	_on_tracy_toggled(tracy_btn.button_pressed)
 	_on_reload_pressed()
 
 
