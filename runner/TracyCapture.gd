@@ -14,10 +14,10 @@ extends RunHooks
 
 const CAPTURE_SECONDS:int = 1
 const CONNECT_WAIT_MSEC:int = 8000
-## Left on: [code]script[/code], so the cases stay in the trace. The rest of this frame is the editor.
-const _QUIET_CATEGORIES:PackedStringArray = [
-	"core", "physics", "render", "render_gpu", "audio",
-	"nav", "io", "shader", "editor", "net", "thread",
+## Every category the singleton accepts. Features have no script setter.
+const _CATEGORIES:PackedStringArray = [
+	"core", "script", "physics", "render", "render_gpu", "audio",
+	"nav", "io", "shader", "editor", "net", "thread", "gdextension",
 ]
 
 const _CAPTURE_EXES:PackedStringArray = []
@@ -31,7 +31,8 @@ var _capture_connected:bool = false
 var _profiler:Object
 var _profiler_was_enabled:bool = false
 var _arm_profiler:bool = false
-var _quieted:PackedStringArray = PackedStringArray()
+## Category name to the value from before this capture. Empty until the handshake.
+var _saved_categories:Dictionary = {}
 var _test:Object
 
 
@@ -138,11 +139,12 @@ func post() -> Error:
 	var tree:SceneTree = _scene_tree()
 	if tree == null:
 		_log("no SceneTree")
+		_restore_profiler()
 		return ERR_UNCONFIGURED
 	_arm_profiler = false
 	if _profiler != null:
 		_profiler.call(&'set_enabled', false)
-	# One more frame applies the silence. Categories stay off through that frame's work.
+	# One more frame applies the silence. The category mask stays wide through that frame.
 	await tree.process_frame
 	_restore_categories()
 	# [code]-s[/code] ends the process. Killing it would drop the file.
@@ -176,7 +178,7 @@ func _on_server_connected() -> void:
 	# Same mark as the handshake. Unsilence applies in this flush, then the cases run.
 	_capture_connected = true
 	if _arm_profiler and _profiler != null:
-		_quiet_categories()
+		_enable_categories()
 		_profiler.call(&'set_enabled', true)
 
 
@@ -213,29 +215,29 @@ func _capture_port() -> int:
 	return 8086
 
 
-## Turn off every category except [code]script[/code]. The mask applies to the next zones.
-func _quiet_categories() -> void:
-	# Remember only the ones that were on, so the restore does not invent flags.
-	_quieted = PackedStringArray()
-	if _profiler == null:
+## Remember each category, then turn them all on. The mask applies to the next zones.
+func _enable_categories() -> void:
+	# A second handshake must not snapshot the mask this capture already widened.
+	if _profiler == null or not _saved_categories.is_empty():
 		return
-	for name:String in _QUIET_CATEGORIES:
+	for name:String in _CATEGORIES:
 		var on_v:Variant = _profiler.call(&'is_category_enabled', name)
-		if on_v is bool and on_v:
-			var added:bool = _quieted.append(name)
-			if added:
-				_profiler.call(&'set_category_enabled', name, false)
+		var was_on:bool = on_v if on_v is bool else false
+		_saved_categories[name] = was_on
+		_profiler.call(&'set_category_enabled', name, true)
 
 
 ## Put the categories back. Call this after the silenced mark.
 func _restore_categories() -> void:
-	# A failed setup never quieted them.
+	# A failed setup never changed them.
 	if _profiler == null:
-		_quieted = PackedStringArray()
+		_saved_categories = {}
 		return
-	for name:String in _quieted:
-		_profiler.call(&'set_category_enabled', name, true)
-	_quieted = PackedStringArray()
+	for name:String in _saved_categories:
+		var saved:Variant = _saved_categories[name]
+		var was_on:bool = saved if saved is bool else false
+		_profiler.call(&'set_category_enabled', name, was_on)
+	_saved_categories = {}
 
 
 ## Put the profiler back and drop the connection listener.
@@ -246,6 +248,7 @@ func _restore_profiler() -> void:
 		var connected_sig:Signal = Signal(_profiler, &'server_connected')
 		if connected_sig.is_connected(_on_server_connected):
 			connected_sig.disconnect(_on_server_connected)
+		_restore_categories()
 		_profiler.call(&'set_enabled', _profiler_was_enabled)
 	_profiler = null
 
@@ -269,8 +272,9 @@ func _crop_trace() -> Error:
 		return ERR_FILE_NOT_FOUND
 	var python:String = _python_exe()
 	if python.is_empty():
-		_log("python was not found. Set TRACY_PYTHON to python.exe.")
-		return ERR_FILE_NOT_FOUND
+		# Trimming is optional. The raw capture is still a successful result.
+		_log("python was not found. Raw capture left at " + _trace_path)
+		return OK
 	var scripts:String = _tracy_script_dir()
 	if scripts.is_empty():
 		_log("tracy python scripts were not found. Set TRACY_SCRIPTS to that folder.")
@@ -301,9 +305,15 @@ func _crop_trace() -> Error:
 	return OK
 
 
-## First existing [code]python.exe[/code], or [code]TRACY_PYTHON[/code] when that file exists.
+## Saved [code]python.exe[/code], or [code]TRACY_PYTHON[/code] when that file exists.
 func _python_exe() -> String:
 	# [method OS.execute] starts the path itself. A bare [code]python[/code] on [code]PATH[/code] is not enough.
+	# A saved path is the one the dock was given. It does not fall through to the guess.
+	var configured:String = _setting_text(&"tracy_python")
+	if not configured.is_empty():
+		if FileAccess.file_exists(configured):
+			return configured
+		return ""
 	var from_env:String = OS.get_environment("TRACY_PYTHON")
 	if not from_env.is_empty() and FileAccess.file_exists(from_env):
 		return from_env

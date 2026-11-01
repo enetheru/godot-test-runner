@@ -48,3 +48,11 @@ const PREFIX:String = "plugin/test_runner"
 			return
 		tracy_scripts = value
 		emit_changed()
+
+## Path to python.exe. Empty falls back to TRACY_PYTHON, then the built-in candidate.
+@export_global_file("*.exe") var tracy_python:String = "":
+	set(value):
+		if tracy_python == value:
+			return
+		tracy_python = value
+		emit_changed()
