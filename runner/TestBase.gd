@@ -142,7 +142,7 @@ func _run() -> void:
 	cycleref = self
 
 	logp("_run() as editorscript - Started")
-	assert( OS.get_thread_caller_id() == OS.get_main_thread_id(),
+	assert( Thread.is_main_thread(),
 		"A _run() must not be called in a threaded context.\n" + \
 		"TestBase relies on the 'await' keyword and functionality which is." + \
 		"not usable in a threaded context.\n")
@@ -188,7 +188,7 @@ func run_test() -> void:
 	# awaits after [signal test_finished], so the pin has to outlive that signal.
 	cycleref = self
 
-	assert( OS.get_thread_caller_id() == OS.get_main_thread_id(),
+	assert( Thread.is_main_thread(),
 		"A run_test() must not be called in a threaded context.\n" + \
 		"TestBase relies on the 'await' keyword and functionality which is." + \
 		"not usable in a threaded context.\n")
