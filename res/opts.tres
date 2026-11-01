@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="TestRunnerOpts" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/enetheru.test-runner/scripts/test_runner_opts.gd" id="1_opts"]
+
+[resource]
+script = ExtResource("1_opts")
+verbose = false
+debug = false
+tracy = false

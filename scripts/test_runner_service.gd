@@ -7,7 +7,7 @@ extends Node
 ## Default batch is sequential; [code]opts.parallel[/code] matches the UI
 ## (launch every suite without awaiting the previous).
 
-const Shared = preload( "scripts/shared.gd" )
+const Shared = preload( "shared.gd" )
 const RetCode = Shared.RetCode
 
 const LAST_JSON_PATH:String = "user://test_runner_last.json"

@@ -1,20 +1,36 @@
 @tool
 extends EditorPlugin
 
-const MainPanel = preload( "main_panel.tscn" )
+const MainPanel = preload( "ui/main_panel.tscn" )
 const CHECKLIST = preload( "res/checklist.svg" )
-const ServiceScript = preload( "test_runner_service.gd" )
+const ServiceScript = preload( "scripts/test_runner_service.gd" )
+const SettingsScript = preload( "scripts/settings.gd" )
+const OptsScript = preload( "scripts/test_runner_opts.gd" )
+const SETTINGS_PREFIX:String = OptsScript.PREFIX
 
 const CS_OWNER:String = "enetheru.test-runner"
 const _ExportPlugin = preload( "export_plugin.gd" )
 
 var main_panel_instance:Control
 var service:Node = null
+var opts:OptsScript
+var settings_hlp:SettingsScript
 var _cs_plugin:EditorPlugin = null
 var _cs_reloaded_cb:Callable = Callable()
 var _export_plugin:EditorExportPlugin = null
 ## Set by the gdflatbuffers libtracy editor test. A normal editor leaves it unset.
 var _headless_arm_tries:int = 0
+
+
+func _init() -> void:
+	var opts_path:String = get_script().resource_path.get_base_dir().path_join( "res/opts.tres" )
+	var loaded:Resource = load( opts_path )
+	if loaded is OptsScript:
+		opts = loaded
+	else:
+		opts = OptsScript.new()
+		push_error( "TestRunner opts missing: " + opts_path )
+	settings_hlp = SettingsScript.new( opts, SETTINGS_PREFIX )
 
 
 func _enter_tree() -> void:
@@ -27,6 +43,7 @@ func _enter_tree() -> void:
 	service.call( &"reload" )
 
 	main_panel_instance = MainPanel.instantiate()
+	main_panel_instance.set( &"opts", opts )
 	EditorInterface.get_editor_main_screen().add_child( main_panel_instance )
 	_make_visible( false )
 	if main_panel_instance.has_method( &"bind_service" ):

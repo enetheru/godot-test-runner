@@ -28,7 +28,7 @@ When **enetheru.command-server** is enabled, this plugin registers
 | `TESTS_RUN` | **yes** | Confirm dialog, then run |
 | `TESTS_LAST` | no | Last batch JSON |
 
-Logic lives in `test_runner_service.gd` (Node on the plugin). The main panel Tree
+Logic lives in `scripts/test_runner_service.gd` (Node on the plugin). The main panel Tree
 stays the UI view; service owns discovery + agent runs + `user://` logs.
 
 Discovery walks `res://tests/**` (not a fixed two-level tree). Nested folders

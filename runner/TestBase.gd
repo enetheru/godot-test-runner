@@ -10,7 +10,7 @@ var cycleref: EditorScript
 #           ████ ██      ██ ██       ██████  ██   ██    ██    ███████          #
 func                        _________IMPORTS_________              ()->void:pass
 
-const Shared = preload('scripts/shared.gd')
+const Shared = preload('../scripts/shared.gd')
 const TestResult = Shared.TestResult
 
 ## NOTE: Dont forget, OK is 1, FAIL is 0. Which is backwards for the standard

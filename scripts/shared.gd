@@ -8,7 +8,7 @@ extends EditorScript
 #           ████ ██      ██ ██       ██████  ██   ██    ██    ███████          #
 func                        _________IMPORTS_________              ()->void:pass
 
-const InfoBox = preload('../info_box.gd')
+const InfoBox = preload('../ui/info_box.gd')
 
 #                       ██████  ███████ ███████ ███████                        #
 #                       ██   ██ ██      ██      ██                             #

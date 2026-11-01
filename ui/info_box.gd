@@ -3,7 +3,7 @@ extends PanelContainer
 
 var title : String
 
-@onready var stylebox : StyleBoxFlat = preload('res/info_style_box.tres').duplicate()
+@onready var stylebox : StyleBoxFlat = preload('../res/info_style_box.tres').duplicate()
 @onready var label: RichTextLabel = $Elements/Label
 @onready var rtl: RichTextLabel = $Elements/RichTextLabel
 

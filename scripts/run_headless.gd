@@ -1,7 +1,7 @@
 @tool
 extends EditorScript
 
-const Shared = preload('scripts/shared.gd')
+const Shared = preload('shared.gd')
 
 var fs := EditorInterface.get_resource_filesystem()
 var test_dir : EditorFileSystemDirectory = fs.get_filesystem_path( 'res://tests/' )

@@ -12,8 +12,8 @@ extends VBoxContainer
 func                        _________IMPORTS_________              ()->void:pass
 
 # Scripts
-const InfoBox = preload('uid://gli414sa5hot')
-const Shared = preload('uid://ccrhkvl5ptefw')
+const InfoBox = preload('info_box.gd')
+const Shared = preload('../scripts/shared.gd')
 
 # Classes
 const TestDef = Shared.TestDef
@@ -21,20 +21,20 @@ const TestResult = Shared.TestResult
 const RetCode = Shared.RetCode
 
 # Scenes
-const INFO_BOX = preload('uid://dt0eqt7nuorql')
+const INFO_BOX = preload('info_box.tscn')
 
 # Resources
 # Icons
-const DEBUG_RERUN = preload('uid://dvy1xigrytulx')
-const FILE_CODE = preload('uid://cvot4lpp8maag')
-const FOLDER_OPEN = preload('uid://cepxbj0ne0kkt')
+const DEBUG_RERUN = preload('../res/debug-rerun.svg')
+const FILE_CODE = preload('../res/file-code.svg')
+const FOLDER_OPEN = preload('../res/folder-open.svg')
 
-const FLIP_HALF = preload('uid://biv4nfodlftli')
-const FLIP_HEAD = preload('uid://35f3dwsmtyx3')
-const FLIP_TAILS = preload('uid://b7mrw71e2x5gx')
+const FLIP_TAILS = preload('../res/flip_tails.svg')
+const FLIP_HEAD = preload('../res/flip_head.svg')
+const FLIP_HALF = preload('../res/flip_half.svg')
 
-const MEDAL = preload('uid://buto46ta3chpg')
-const SKULL = preload('uid://bq1h8nwto0qun')
+const MEDAL = preload('../res/medal.tres')
+const SKULL = preload('../res/skull.svg')
 
 const color_OK = Color.DARK_GREEN
 const color_OK_bright = Color.GREEN_YELLOW
@@ -60,6 +60,7 @@ func                        ________PROPERTIES_______              ()->void:pass
 # Top Row Center
 @onready var stats_counter: RichTextLabel = $Buttons/Center/StatsCounter
 # Top Row Right
+@onready var tracy_btn: CheckButton = $Buttons/Right/Tracy
 @onready var verbose_btn: CheckButton = $Buttons/Right/Verbose
 @onready var debug_btn: CheckButton = $Buttons/Right/Debug
 @onready var clear_btn: Button = $Buttons/Right/ClearResults
@@ -75,15 +76,24 @@ func                        ________PROPERTIES_______              ()->void:pass
 @onready var info_items: VBoxContainer = $TestOutput/InfoList/ScrollContainer/InfoItems
 
 # Runtime
-var test_list : Array[TestDef]
-var test_selection : Dictionary = {}
-var test_verbose : bool = false
-var test_debug : bool = false
+var test_list:Array[TestDef]
+var test_selection:Dictionary = {}
+const OptsScript = preload( "../scripts/test_runner_opts.gd" )
+
+var test_verbose:bool = false
+var test_debug:bool = false
+var test_tracy:bool = false
+## ProjectSettings mirror. The plugin assigns this before the dock enters the tree.
+var opts:OptsScript
+## Optional headless service (Command Server). UI still owns Tree/InfoBoxes.
+var _service:Node = null
 
 # Configuration
-var test_path : String = 'res://tests'
-var test_script_filter : Callable = default_script_filter
-var test_folder_filter : Callable = default_folder_filter
+var test_path:String = 'res://tests'
+var test_script_filter:Callable = default_script_filter
+var test_folder_filter:Callable = default_folder_filter
+## Junction / symlink cycle guard — not a UI depth limit.
+var max_scan_depth:int = Shared.DEFAULT_MAX_SCAN_DEPTH
 
 
 #             ███████ ██    ██ ███████ ███    ██ ████████ ███████              #
@@ -93,11 +103,24 @@ var test_folder_filter : Callable = default_folder_filter
 #             ███████   ████   ███████ ██   ████    ██    ███████              #
 func                        __________EVENTS_________              ()->void:pass
 
+func bind_service( svc:Node ) -> void:
+	_service = svc
+	_apply_opts()
+
+
+## Verbose and debug from TESTS_SET. Writes [member opts] and ProjectSettings.
+func set_run_flags( v:bool, d:bool ) -> void:
+	_store_flag( &"verbose", v )
+	_store_flag( &"debug", d )
+
+
 func _on_run_pressed() -> void:
 	process_selection()
 
 
 func _on_reload_pressed() -> void:
+	if is_instance_valid( _service ) and _service.has_method( &"reload" ):
+		_service.call( &"reload" )
 	regenerate_tree()
 	# TODO, reload tests should have some effect on the results list
 
@@ -110,18 +133,65 @@ func _on_folder_pressed() -> void:
 	pass # Replace with function body.
 
 
+func _on_tracy_toggled(toggled_on: bool) -> void:
+	_store_flag( &"tracy", toggled_on )
+
+
 func _on_verbose_toggled(toggled_on: bool) -> void:
-	test_verbose = toggled_on
+	_store_flag( &"verbose", toggled_on )
 
 
 func _on_debug_toggled(toggled_on: bool) -> void:
-	test_debug = toggled_on
+	_store_flag( &"debug", toggled_on )
+
+
+func _on_opts_changed() -> void:
+	_apply_opts()
+
+
+## Copy [member opts] onto the buttons, the service, and the Tracy hook.
+func _apply_opts() -> void:
+	if opts != null:
+		test_verbose = opts.verbose
+		test_debug = opts.debug
+		test_tracy = opts.tracy
+	if is_node_ready():
+		verbose_btn.set_pressed_no_signal( test_verbose )
+		debug_btn.set_pressed_no_signal( test_debug )
+		tracy_btn.set_pressed_no_signal( test_tracy )
+	var installer:Callable = Callable()
+	if test_tracy:
+		installer = TracyCapture.install
+	TestBase.prepare_run = installer
+	PlayBase.prepare_run = installer
+	if is_instance_valid( _service ) and _service.has_method( &"set_flags" ):
+		_service.call( &"set_flags", test_verbose, test_debug )
+
+
+## Write one flag through [member opts] into ProjectSettings.
+func _store_flag( prop:StringName, value:bool ) -> void:
+	if opts != null and opts.get( prop ) != value:
+		opts.set( prop, value )
+		var full_path:String = OptsScript.PREFIX.path_join( String( prop ) )
+		ProjectSettings.set_setting( full_path, value )
+		var saved:Error = ProjectSettings.save()
+		if saved != OK:
+			push_warning( "TestRunner: ProjectSettings.save failed (%s)" % error_string( saved ) )
+	_apply_opts()
 
 
 func _on_clear_results_pressed() -> void:
+	clear_results_ui()
+
+
+## Clear InfoBoxes + tree status; also clears service last-results when bound.
+func clear_results_ui() -> void:
+	if is_instance_valid( _service ) and _service.has_method( &"clear_results" ):
+		_service.call( &"clear_results" )
 	regenerate_tree()
-	for child in info_items.get_children():
-		child.call_deferred("queue_free")
+	if info_items:
+		for child in info_items.get_children():
+			child.call_deferred( "queue_free" )
 
 
 func _on_tests_tree_multi_selected(
@@ -146,23 +216,23 @@ func _on_tests_tree_button_clicked(
 
 func _on_tests_tree_gui_input(event: InputEvent) -> void:
 	if not event is InputEventMouseButton: return
-	var mb_event : InputEventMouseButton = event
+	var mb_event:InputEventMouseButton = event
 	if not mb_event.pressed: return
 	#var column = tree.get_column_at_position(mb_event.position)
-	var tree_item : TreeItem = tests_tree.get_item_at_position(mb_event.position)
+	var tree_item:TreeItem = tests_tree.get_item_at_position(mb_event.position)
 	if not tree_item: return
 
-	var metadata : Variant = tree_item.get_metadata(0)
+	var metadata:Variant = tree_item.get_metadata(0)
 	if not metadata: return
-	var test_def : TestDef = metadata
-	var test_file : String = tree_item.get_text(0)
+	var test_def:TestDef = metadata
+	var test_file:String = tree_item.get_text(0)
 
 	# FIXME it would be nice if I could get the file open in the text editor
-	var file_path : String = "/".join([test_def.folder_path, test_file])
+	var file_path:String = "/".join([test_def.folder_path, test_file])
 	if Engine.is_editor_hint():
 		EditorInterface.get_file_system_dock().navigate_to_path(file_path)
 
-	var item_results : TestResult = test_def.results.get(tree_item)
+	var item_results:TestResult = test_def.results.get(tree_item)
 	if item_results and item_results.latest:
 		item_results.latest.call_deferred( "grab_focus")
 
@@ -175,7 +245,16 @@ func _on_tests_tree_gui_input(event: InputEvent) -> void:
 func                        ________OVERRIDES________              ()->void:pass
 
 func _ready() -> void:
+	if opts != null and not opts.changed.is_connected( _on_opts_changed ):
+		@warning_ignore( "return_value_discarded" )
+		opts.changed.connect( _on_opts_changed )
+	_apply_opts()
 	_on_reload_pressed()
+
+
+func _exit_tree() -> void:
+	if opts != null and opts.changed.is_connected( _on_opts_changed ):
+		opts.changed.disconnect( _on_opts_changed )
 
 
 #         ███    ███ ███████ ████████ ██   ██  ██████  ██████  ███████         #
@@ -185,53 +264,59 @@ func _ready() -> void:
 #         ██      ██ ███████    ██    ██   ██  ██████  ██████  ███████         #
 func                        _________METHODS_________              ()->void:pass
 
-func default_script_filter( filename : String ) -> bool:
+func default_script_filter( filename:String ) -> bool:
 	return filename.begins_with("test") \
 		and filename.ends_with(".gd") \
 		and not filename.ends_with("_generated.gd")
 
 
-func default_folder_filter( folder_path : String ) -> bool:
-	var files : Array = DirAccess.get_files_at( folder_path )
+func default_folder_filter( folder_path:String ) -> bool:
+	var files:Array = DirAccess.get_files_at( folder_path )
 	return not files.filter( test_script_filter ).is_empty()
 
 
-func collect_tests( _path : String ) -> Array[TestDef]:
-	var tests : Array[TestDef]
-
-	var folders : Array = DirAccess.get_directories_at(_path)
-	var folder_paths : Array = folders.map( func(folder : String) -> String:
-			return "/".join([_path,folder]))
-	folder_paths.sort()
-	for folder_path : String in folder_paths.filter( test_folder_filter ):
-		var files : Array = DirAccess.get_files_at( folder_path )
-		var folder : String = folder_path.get_file()
-
-		var def : TestDef = TestDef.new()
-		def.name =  folder.to_pascal_case()
-		def.folder_path =  folder_path
-		def.test_scripts =  files.filter( test_script_filter )
-
-		tests.append( def )
-
+func collect_tests( _path:String ) -> Array[TestDef]:
+	var tree:Array[Dictionary] = Shared.collect_test_tree(
+			_path, max_scan_depth, test_script_filter )
+	var tests:Array[TestDef] = []
+	for node:Dictionary in tree:
+		tests.append( _test_def_from_node( node ) )
 	return tests
 
 
-var already_updating : bool = false
+func _test_def_from_node( node:Dictionary ) -> TestDef:
+	var def:TestDef = TestDef.new()
+	def.name = str( node.get( "name", "" ) )
+	def.folder_path = str( node.get( "folder_path", "" ) )
+	def.test_scripts = node.get( "test_scripts", [] )
+	for child_v:Variant in node.get( "children", [] ):
+		if child_v is Dictionary:
+			var child:Dictionary = child_v
+			def.children.append( _test_def_from_node( child ) )
+	return def
+
+
+var already_updating:bool = false
 func update_stats() -> void:
 	if already_updating: return
 	already_updating = true
 	stats_counter.clear()
-	var groups : int = 0
-	var results : int = 0
-	var failures : int = 0
-	var successes : int = 0
-	for test_def : TestDef in test_list:
+	var groups:int = 0
+	var results:int = 0
+	var failures:int = 0
+	var successes:int = 0
+	var stack:Array = test_list.duplicate()
+	while not stack.is_empty():
+		var test_def:TestDef = stack.pop_back()
 		groups += 1
-		for result : TestResult in test_def.results.values():
+		for result:TestResult in test_def.results.values():
 			results += 1
 			if result.retcode == RetCode.TEST_OK: successes += 1
 			if result.retcode == RetCode.TEST_FAILED: failures += 1
+		for child_v:Variant in test_def.children:
+			if child_v is TestDef:
+				var child_def:TestDef = child_v
+				stack.append( child_def )
 
 	stats_counter.add_text("%d:" % groups)
 	stats_counter.add_image(FOLDER_OPEN, 23)
@@ -244,11 +329,11 @@ func update_stats() -> void:
 	already_updating = false
 
 
-func create_info( file_item : TreeItem ) -> Control:
-	var test_def : TestDef = file_item.get_metadata(0)
-	var file_name : String = file_item.get_text(0)
+func create_info( file_item:TreeItem ) -> Control:
+	var test_def:TestDef = file_item.get_metadata(0)
+	var file_name:String = file_item.get_text(0)
 
-	var info_box : InfoBox = INFO_BOX.instantiate()
+	var info_box:InfoBox = INFO_BOX.instantiate()
 	info_items.add_child(info_box)
 	info_box.show()
 	if not info_box.is_node_ready(): await info_box.ready
@@ -259,7 +344,7 @@ func create_info( file_item : TreeItem ) -> Control:
 
 
 func process_selection() -> void:
-	var selection : Array
+	var selection:Array
 	if test_selection.is_empty():
 		selection = tests_tree.get_root().get_children()
 	elif tests_tree.get_root() in test_selection.keys():
@@ -267,21 +352,39 @@ func process_selection() -> void:
 	else:
 		selection = test_selection.keys()
 
-	for folder_item : TreeItem in selection:
-		for file_item : TreeItem in folder_item.get_children():
-			var _test_def : TestDef = file_item.get_metadata(0)
-			process_test(file_item)
+	for item:TreeItem in selection:
+		for file_item:TreeItem in _file_items_under( item ):
+			process_test( file_item )
 
 
-func process_test( file_item : TreeItem ) -> void:
-	var info_box : InfoBox = await create_info( file_item )
-	var test_def : TestDef = file_item.get_metadata(0)
-	var script_file : String = file_item.get_text(0)
-	var script_path : String = "/".join([test_def.folder_path, script_file])
-	var info_text : String
+func _is_file_item( item:TreeItem ) -> bool:
+	if item == null:
+		return false
+	var meta:Variant = item.get_metadata( 0 )
+	return meta is TestDef \
+	and str( item.get_text( 0 ) ).ends_with( ".gd" )
+
+
+func _file_items_under( item:TreeItem ) -> Array[TreeItem]:
+	var out:Array[TreeItem] = []
+	if _is_file_item( item ):
+		out.append( item )
+	for child:TreeItem in item.get_children():
+		out.append_array( _file_items_under( child ) )
+	return out
+
+
+func process_test( file_item:TreeItem ) -> void:
+	if not _is_file_item( file_item ):
+		return
+	var info_box:InfoBox = await create_info( file_item )
+	var test_def:TestDef = file_item.get_metadata(0)
+	var script_file:String = file_item.get_text(0)
+	var script_path:String = "/".join([test_def.folder_path, script_file])
+	var info_text:String
 
 	# We're only keeping around one rest result per test.
-	var result : TestResult = test_def.results.get_or_add( file_item, TestResult.new() )
+	var result:TestResult = test_def.results.get_or_add( file_item, TestResult.new() )
 	result.latest = info_box
 	result.retcode = RetCode.TEST_FAILED
 	result.output = ["Only Just Created"]
@@ -304,14 +407,14 @@ func process_test( file_item : TreeItem ) -> void:
 			return
 
 	# Load up the script and run the test
-	var script : GDScript = load( script_path )
+	var script:GDScript = load( script_path )
 	if not script.can_instantiate():
 		result.output = ["Cannot instantiate '%s'" % script_path ]
 	elif Engine.is_editor_hint():
-		var instance : TestBase  = script.new()
-		if instance : await run_test_base( instance, result )
+		var instance:TestBase  = script.new()
+		if instance:await run_test_base( instance, result )
 	else:
-		var instance : PlayBase  = script.new()
+		var instance:PlayBase  = script.new()
 		if instance :
 			get_tree().root.add_child(instance, true)
 			await run_play_base( instance, result,  )
@@ -319,9 +422,9 @@ func process_test( file_item : TreeItem ) -> void:
 
 	#Erase our alternate script file after we are done.
 	if not Engine.is_editor_hint():
-		var err : Error = DirAccess.remove_absolute(script_path)
+		var err:Error = DirAccess.remove_absolute(script_path)
 		if err != OK:
-			var msg : String = error_string(err) + ": Failure to remove alternate script"
+			var msg:String = error_string(err) + ": Failure to remove alternate script"
 			result.output.append(msg)
 			printerr( msg )
 
@@ -342,7 +445,7 @@ func process_test( file_item : TreeItem ) -> void:
 	update_stats()
 
 
-func run_test_base( instance : TestBase, result : TestResult ) -> void:
+func run_test_base( instance:TestBase, result:TestResult ) -> void:
 	instance._verbose = test_verbose
 	instance._debug = test_debug
 	@warning_ignore('redundant_await')
@@ -351,7 +454,7 @@ func run_test_base( instance : TestBase, result : TestResult ) -> void:
 	result.output = instance.output
 
 
-func run_play_base( instance : PlayBase, result : TestResult ) -> void:
+func run_play_base( instance:PlayBase, result:TestResult ) -> void:
 	instance._verbose = test_verbose
 	instance._debug = test_debug
 	@warning_ignore('redundant_await')
@@ -360,8 +463,8 @@ func run_play_base( instance : PlayBase, result : TestResult ) -> void:
 	result.output = instance.output
 
 
-func re_write( orig_path : String) -> String:
-	var orig : Dictionary = {
+func re_write( orig_path:String) -> String:
+	var orig:Dictionary = {
 		"dir":orig_path.get_base_dir(),
 		"name":orig_path.get_file().get_basename()
 	}
@@ -373,11 +476,11 @@ func re_write( orig_path : String) -> String:
 		return ""
 
 	# skip the first three lines.
-	for i : int in 3:
-		var _line : String = orig_file.get_line()
+	for i:int in 3:
+		var _line:String = orig_file.get_line()
 
 	var alt_file := FileAccess.open( alt_path, FileAccess.WRITE)
-	var header_replacement : String = "# This script is modified automatically to work in play mode.
+	var header_replacement:String = "# This script is modified automatically to work in play mode.
 extends PlayBase\n"
 	if not alt_file.store_string(header_replacement):
 		printerr( "Failed to write to script alternate")
@@ -387,7 +490,7 @@ extends PlayBase\n"
 
 
 	while not orig_file.eof_reached():
-		var line : String = orig_file.get_line()
+		var line:String = orig_file.get_line()
 		if not alt_file.store_string(line + "\n"):
 			printerr( "Failed to write to script alternate")
 			orig_file.close()
@@ -407,11 +510,11 @@ extends PlayBase\n"
 func                        __________TREE___________              ()->void:pass
 
 func add_action_row(
-			test_def : TestDef,
-			filename : String,
-			parent_item : TreeItem
+			test_def:TestDef,
+			filename:String,
+			parent_item:TreeItem
 			) -> void:
-	var item : TreeItem = parent_item.create_child()
+	var item:TreeItem = parent_item.create_child()
 	# Test Name
 	item.set_selectable(0, false )
 	item.set_metadata(0, test_def )
@@ -442,27 +545,40 @@ func regenerate_tree() -> void:
 	# TODO Calculate the size based on the theme font and the maximum size.
 
 	# Add the root
-	var _top_item : TreeItem = tests_tree.create_item()
+	var _top_item:TreeItem = tests_tree.create_item()
 	_top_item.set_text(0,"Tests")
 
-	# Add the rows
-	for test_def : TestDef in test_list:
-		# Add Folder name
-		var folder_item : TreeItem = tests_tree.create_item()
-		folder_item.set_text( 0, test_def.name )
-		folder_item.set_selectable(1, false )
-
-		# Add script items
-		for file : String in test_def.test_scripts:
-			add_action_row( test_def, file, folder_item )
+	# Add the rows (folder depth follows the disk; no hardcoded levels)
+	var root_item:TreeItem = tests_tree.get_root()
+	for test_def:TestDef in test_list:
+		_add_folder_branch( test_def, root_item )
 
 	update_stats()
 
 
+func _add_folder_branch( test_def:TestDef, parent_item:TreeItem ) -> void:
+	# One script is still a folder. Collapsing it put that file on the parent.
+	var folder_item:TreeItem = parent_item.create_child()
+	folder_item.set_text( 0, test_def.name )
+	folder_item.set_selectable( 1, false )
+	folder_item.set_icon( 0, FOLDER_OPEN )
+	folder_item.set_icon_max_width( 0, 16 )
+	_add_folder_contents( test_def, folder_item )
+
+
+func _add_folder_contents( test_def:TestDef, parent_item:TreeItem ) -> void:
+	for child_v:Variant in test_def.children:
+		if child_v is TestDef:
+			var child_def:TestDef = child_v
+			_add_folder_branch( child_def, parent_item )
+	for file:String in test_def.test_scripts:
+		add_action_row( test_def, file, parent_item )
+
+
 func update_tree_item(
-			item : TreeItem,
-			label : String = "PENDING",
-			color : Color = color_TEST
+			item:TreeItem,
+			label:String = "PENDING",
+			color:Color = color_TEST
 			) -> void:
 	item.set_text(1, label)
 	match label:

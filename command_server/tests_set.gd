@@ -96,6 +96,9 @@ func _mirror_panel( v:bool, d:bool ) -> void:
 	if not ( panel_v is Object ):
 		return
 	var panel:Object = panel_v
+	if panel.has_method( &"set_run_flags" ):
+		panel.call( &"set_run_flags", v, d )
+		return
 	if panel.get( "test_verbose" ) != null:
 		panel.set( "test_verbose", v )
 	if panel.get( "test_debug" ) != null:
