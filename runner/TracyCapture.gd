@@ -14,10 +14,15 @@ extends RunHooks
 
 const CAPTURE_SECONDS:int = 1
 const CONNECT_WAIT_MSEC:int = 8000
-## Every category the singleton accepts. Features have no script setter.
+## Every category the singleton accepts.
 const _CATEGORIES:PackedStringArray = [
 	"core", "script", "physics", "render", "render_gpu", "audio",
 	"nav", "io", "shader", "editor", "net", "thread", "gdextension",
+]
+## Every feature the singleton accepts. [code]memory[/code] cannot change after startup.
+const _FEATURES:PackedStringArray = [
+	"zones", "plots", "messages", "memory", "locks", "gpu",
+	"frames", "frame_images", "auto_gdscript", "log",
 ]
 
 const _CAPTURE_EXES:PackedStringArray = []
@@ -33,6 +38,8 @@ var _profiler_was_enabled:bool = false
 var _arm_profiler:bool = false
 ## Category name to the value from before this capture. Empty until the handshake.
 var _saved_categories:Dictionary = {}
+## Feature name to the value from before this capture. Empty until the handshake.
+var _saved_features:Dictionary = {}
 var _test:Object
 
 
@@ -144,9 +151,10 @@ func post() -> Error:
 	_arm_profiler = false
 	if _profiler != null:
 		_profiler.call(&'set_enabled', false)
-	# One more frame applies the silence. The category mask stays wide through that frame.
+	# One more frame applies the silence. The masks stay wide through that frame.
 	await tree.process_frame
 	_restore_categories()
+	_restore_features()
 	# [code]-s[/code] ends the process. Killing it would drop the file.
 	var started_msec:int = Time.get_ticks_msec()
 	while _capture_pid >= 0 and OS.is_process_running(_capture_pid) \
@@ -179,6 +187,7 @@ func _on_server_connected() -> void:
 	_capture_connected = true
 	if _arm_profiler and _profiler != null:
 		_enable_categories()
+		_enable_features()
 		_profiler.call(&'set_enabled', true)
 
 
@@ -240,6 +249,31 @@ func _restore_categories() -> void:
 	_saved_categories = {}
 
 
+## Remember each feature, then turn them all on. A silenced profiler keeps this until recording is enabled.
+func _enable_features() -> void:
+	# A second handshake must not snapshot the mask this capture already widened.
+	if _profiler == null or not _saved_features.is_empty():
+		return
+	for name:String in _FEATURES:
+		var on_v:Variant = _profiler.call(&'is_feature_enabled', name)
+		var was_on:bool = on_v if on_v is bool else false
+		_saved_features[name] = was_on
+		_profiler.call(&'set_feature_enabled', name, true)
+
+
+## Put the features back. Call this while the profiler is still silenced.
+func _restore_features() -> void:
+	# A failed setup never changed them.
+	if _profiler == null:
+		_saved_features = {}
+		return
+	for name:String in _saved_features:
+		var saved:Variant = _saved_features[name]
+		var was_on:bool = saved if saved is bool else false
+		_profiler.call(&'set_feature_enabled', name, was_on)
+	_saved_features = {}
+
+
 ## Put the profiler back and drop the connection listener.
 func _restore_profiler() -> void:
 	# [method pre] silenced the engine. Put the previous enabled state back.
@@ -249,6 +283,7 @@ func _restore_profiler() -> void:
 		if connected_sig.is_connected(_on_server_connected):
 			connected_sig.disconnect(_on_server_connected)
 		_restore_categories()
+		_restore_features()
 		_profiler.call(&'set_enabled', _profiler_was_enabled)
 	_profiler = null
 
