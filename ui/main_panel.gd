@@ -115,7 +115,8 @@ func set_run_flags( v:bool, d:bool ) -> void:
 
 
 func _on_run_pressed() -> void:
-	process_selection()
+	# The button signal drops this state. Awaiting keeps it until the selection finishes.
+	await process_selection()
 
 
 func _on_reload_pressed() -> void:
@@ -149,19 +150,26 @@ func _on_opts_changed() -> void:
 	_apply_opts()
 
 
+## This binary registered the Profiler singleton. Stock Godot has no such name.
+func _tracy_supported() -> bool:
+	return Engine.has_singleton(&'Profiler')
+
+
 ## Copy [member opts] onto the buttons, the service, and the Tracy hook.
 func _apply_opts() -> void:
 	if opts != null:
 		test_verbose = opts.verbose
 		test_debug = opts.debug
 		test_tracy = opts.tracy
+	var supported:bool = _tracy_supported()
 	if is_node_ready():
 		verbose_btn.set_pressed_no_signal( test_verbose )
 		debug_btn.set_pressed_no_signal( test_debug )
+		tracy_btn.visible = supported
 		tracy_btn.set_pressed_no_signal( test_tracy )
 	var installer:Callable = Callable()
-	if test_tracy:
-		installer = TracyCapture.install
+	if supported and test_tracy:
+		installer = Callable(TracyCapture, &"install")
 	TestBase.prepare_run = installer
 	PlayBase.prepare_run = installer
 	if is_instance_valid( _service ) and _service.has_method( &"set_flags" ):
@@ -211,7 +219,7 @@ func _on_tests_tree_button_clicked(
 			_id: int,
 			_mouse_button_index: int
 			) -> void:
-	process_test(item)
+	await process_test(item)
 
 
 func _on_tests_tree_gui_input(event: InputEvent) -> void:
@@ -354,7 +362,7 @@ func process_selection() -> void:
 
 	for item:TreeItem in selection:
 		for file_item:TreeItem in _file_items_under( item ):
-			process_test( file_item )
+			await process_test( file_item )
 
 
 func _is_file_item( item:TreeItem ) -> bool:
@@ -446,6 +454,7 @@ func process_test( file_item:TreeItem ) -> void:
 
 
 func run_test_base( instance:TestBase, result:TestResult ) -> void:
+	_apply_opts()
 	instance._verbose = test_verbose
 	instance._debug = test_debug
 	@warning_ignore('redundant_await')
@@ -455,11 +464,12 @@ func run_test_base( instance:TestBase, result:TestResult ) -> void:
 
 
 func run_play_base( instance:PlayBase, result:TestResult ) -> void:
+	_apply_opts()
 	instance._verbose = test_verbose
 	instance._debug = test_debug
 	@warning_ignore('redundant_await')
 	await instance.run_test()
-	result.retcode = instance.runcode
+	result.retcode = instance.runcode as RetCode
 	result.output = instance.output
 
 

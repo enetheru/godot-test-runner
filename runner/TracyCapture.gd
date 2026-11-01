@@ -1,15 +1,14 @@
 @tool
 class_name TracyCapture
-extends RefCounted
+extends RunHooks
 
-## Capture installed on [member TestBase.pre_run] and [member TestBase.post_run].
+## Capture installed on [member TestBase.hooks].
 ##
-## [method install] assigns those hooks. This does not extend [TestBase], so a
-## run with the hooks empty leaves the capture off. [method _begin_capture]
-## runs before [method TestBase._setup]. [method _end_capture] runs after the
-## procedure, including a timeout. The trace is the test script's name plus
-## [code].tracy[/code], in that script's folder. The crop is
-## [code]trim_tracy_tail.py[/code] then [code]shift_tracy_start.py[/code]
+## [method install] assigns this object. A run with [member TestBase.hooks]
+## empty leaves the capture off. [method pre] runs before [method TestBase._setup].
+## [method post] runs after the procedure, including a timeout. The trace is
+## the test script's name plus [code].tracy[/code], in that script's folder.
+## The crop is [code]trim_tracy_tail.py[/code] then [code]shift_tracy_start.py[/code]
 ## [code]--trim-init[/code]. Another Tracy server already attached refuses
 ## the connection.
 
@@ -21,15 +20,10 @@ const _QUIET_CATEGORIES:PackedStringArray = [
 	"nav", "io", "shader", "editor", "net", "thread",
 ]
 
-const _CAPTURE_EXES:PackedStringArray = [
-	"C:/git/wolfpld/tracy/capture/cmake-build-release-visual-studio/tracy-capture.exe",
-]
-const _PYTHON_EXES:PackedStringArray = [
-	"C:/Users/nicho/AppData/Local/Programs/Python/Python314/python.exe",
-]
-const _TRACY_SCRIPT_DIRS:PackedStringArray = [
-	"C:/Godot/src/godot-private/misc/scripts/tracy",
-]
+const _CAPTURE_EXES:PackedStringArray = []
+const _PYTHON_EXES:PackedStringArray = []
+const _TRACY_SCRIPT_DIRS:PackedStringArray = []
+const _SETTINGS_PREFIX:String = "plugin/test_runner"
 
 var _capture_pid:int = -1
 var _trace_path:String = ""
@@ -41,20 +35,26 @@ var _quieted:PackedStringArray = PackedStringArray()
 var _test:Object
 
 
-## Assign [member TestBase.pre_run], [member TestBase.post_run], and the message sink.
+## Assign [member TestBase.hooks] when it is still empty.
 static func install(test:Object) -> void:
 	if test == null:
 		return
-	var existing:Variant = test.get(&"pre_run")
-	if existing is Callable:
-		var hook:Callable = existing
-		if hook.is_valid():
-			return
+	if test.get(&"hooks") != null:
+		return
 	var capture := TracyCapture.new()
 	capture._test = test
-	test.set(&"pre_run", Callable(capture, &"_begin_capture"))
-	test.set(&"post_run", Callable(capture, &"_end_capture"))
-	test.set(&"profiler_message", Callable(capture, &"_profiler_message"))
+	# The test's property keeps this RefCounted alive.
+	test.set(&"hooks", capture)
+
+
+## Install when the saved flag is on and this binary registered the Profiler singleton.
+static func install_saved(test:Object) -> void:
+	if test == null or not Engine.has_singleton(&'Profiler'):
+		return
+	var flag:Variant = ProjectSettings.get_setting(_SETTINGS_PREFIX.path_join("tracy"), false)
+	if not (flag is bool) or not flag:
+		return
+	install(test)
 
 
 func _scene_tree() -> SceneTree:
@@ -72,7 +72,7 @@ func _log(msg:String) -> void:
 
 
 ## Launch the capture and wait until this process accepts it.
-func _begin_capture() -> Error:
+func pre() -> Error:
 	# The timer starts after this hook returns. [method TestBase._setup] can still lower the cap.
 	var tree:SceneTree = _scene_tree()
 	if tree == null:
@@ -133,7 +133,7 @@ func _begin_capture() -> Error:
 
 
 ## Wait until the capture process saves the file, then crop it.
-func _end_capture() -> Error:
+func post() -> Error:
 	# Silence before the wait. The capture process is still connected, and this thread keeps framing.
 	var tree:SceneTree = _scene_tree()
 	if tree == null:
@@ -164,7 +164,7 @@ func _end_capture() -> Error:
 
 
 ## Write [param text] into the open capture.
-func _profiler_message(text:String) -> void:
+func message(text:String) -> void:
 	# [method Profiler.message] is dropped while recording is silenced.
 	if _profiler == null:
 		return
@@ -182,7 +182,12 @@ func _on_server_connected() -> void:
 
 ## First existing [code]tracy-capture[/code], or [code]TRACY_CAPTURE[/code] when that file exists.
 func _capture_exe() -> String:
-	# [code]C:/wolfpld/tracy[/code] is the guessed install. The 0.14.1 build is under [code]C:/git/wolfpld/tracy[/code].
+	# A saved path is the one the dock was given. It does not fall through to the guess.
+	var configured:String = _setting_text(&"tracy_capture")
+	if not configured.is_empty():
+		if FileAccess.file_exists(configured):
+			return configured
+		return ""
 	var from_env:String = OS.get_environment("TRACY_CAPTURE")
 	if not from_env.is_empty() and FileAccess.file_exists(from_env):
 		return from_env
@@ -235,7 +240,7 @@ func _restore_categories() -> void:
 
 ## Put the profiler back and drop the connection listener.
 func _restore_profiler() -> void:
-	# [method _begin_capture] silenced the engine. Put the previous enabled state back.
+	# [method pre] silenced the engine. Put the previous enabled state back.
 	_arm_profiler = false
 	if _profiler != null:
 		var connected_sig:Signal = Signal(_profiler, &'server_connected')
@@ -308,9 +313,21 @@ func _python_exe() -> String:
 	return ""
 
 
+func _setting_text(prop:StringName) -> String:
+	var value:Variant = ProjectSettings.get_setting(_SETTINGS_PREFIX.path_join(String(prop)), "")
+	if value is String:
+		return value
+	return ""
+
+
 ## Folder that holds both crop scripts, or [code]TRACY_SCRIPTS[/code] when that folder has them.
 func _tracy_script_dir() -> String:
-	# The scripts import each other from this folder. The process working directory does not matter.
+	# trim_tracy_tail.py imports shift_tracy_start from this same folder.
+	var configured:String = _setting_text(&"tracy_scripts")
+	if not configured.is_empty():
+		if _tracy_scripts_present(configured):
+			return configured
+		return ""
 	var from_env:String = OS.get_environment("TRACY_SCRIPTS")
 	if _tracy_scripts_present(from_env):
 		return from_env

@@ -32,3 +32,19 @@ const PREFIX:String = "plugin/test_runner"
 			return
 		tracy = value
 		emit_changed()
+
+## Path to tracy-capture.exe. Empty falls back to TRACY_CAPTURE, then the built-in candidate.
+@export_global_file("*.exe") var tracy_capture:String = "":
+	set(value):
+		if tracy_capture == value:
+			return
+		tracy_capture = value
+		emit_changed()
+
+## Folder of the strip scripts, trim_tracy_tail.py and shift_tracy_start.py.
+@export_global_dir var tracy_scripts:String = "":
+	set(value):
+		if tracy_scripts == value:
+			return
+		tracy_scripts = value
+		emit_changed()

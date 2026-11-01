@@ -11,6 +11,7 @@ var cycleref: EditorScript
 func                        _________IMPORTS_________              ()->void:pass
 
 const Shared = preload('../scripts/shared.gd')
+const TracyHooks = preload('TracyCapture.gd')
 const TestResult = Shared.TestResult
 
 ## NOTE: Dont forget, OK is 1, FAIL is 0. Which is backwards for the standard
@@ -74,22 +75,20 @@ var runcode:int = RetCode.TEST_OK
 var output:Array = []
 var max_runtime_s:float = 3
 var timer:Timer
+
 ## True after [signal test_finished] for this run (timeout or normal complete).
 ## Makes [method run_test] return on max-runtime even if `_run_test` is stuck.
 var _finished_emitted:bool = false
+
 ## Max-runtime timer won the race; late `_run_test` completion is ignored.
 var _timed_out:bool = false
+
 ## Host assigns this before runs. [method run_test] calls it with this instance
-## when [member pre_run] is still empty, after the scene tree is ready and before [method _setup].
+## when [member hooks] is still empty, after the scene tree is ready and before [method _setup].
 static var prepare_run:Callable = Callable()
-## After the scene tree is ready and before [method _setup]. Empty skips it.
-## [constant OK] or null continues. Any other int fails the run and skips the procedure.
-var pre_run:Callable = Callable()
-## After the procedure, including a timeout, before [method run_test] returns.
-## Empty skips it. A non-OK int turns a passing run into a failure.
-var post_run:Callable = Callable()
-## Timeline mark used by [method _profiler_message]. Empty makes that call a no-op.
-var profiler_message:Callable = Callable()
+
+## Installed around the procedure. Null skips it. The test keeps this alive.
+var hooks:RunHooks
 
 #            ███████ ██  ██████  ███    ██  █████  ██      ███████             #
 #            ██      ██ ██       ████   ██ ██   ██ ██      ██                  #
@@ -135,7 +134,8 @@ func _run_test() -> RetCode
 func _run() -> void:
 	# NOTE: Maintain a reference to ourself, because no-one else will.
 	# Without this, we will be cleaned up before we have had time to do any
-	# asynchronous work.
+	# asynchronous work. run_test clears the pin after the post hook.
+	# test_finished fires before that hook.
 	cycleref = self
 
 	logp("_run() as editorscript - Started")
@@ -148,8 +148,6 @@ func _run() -> void:
 	# the retults
 	run_test.call_deferred()
 	await test_finished
-
-	cycleref = null
 
 
 #         ███    ███ ███████ ████████ ██   ██  ██████  ██████  ███████         #
@@ -182,6 +180,9 @@ func _ensure_scene_tree() -> Error:
 
 func run_test() -> void:
 	print("Processing: ", get_script().resource_path )
+	# File > Run drops the editor's reference at the first await. The post hook
+	# awaits after [signal test_finished], so the pin has to outlive that signal.
+	cycleref = self
 
 	assert( OS.get_thread_caller_id() == OS.get_main_thread_id(),
 		"A run_test() must not be called in a threaded context.\n" + \
@@ -199,18 +200,22 @@ func run_test() -> void:
 		fd = {'color':'tomato', 'msg':'no SceneTree'}
 		logp("[color={color}][b]_run() - {msg}[/b][/color]".format(fd) )
 		_finish_run()
+		_release_pin()
 		return
 
-	# Outside the procedure. A host can install capture here, or assign [member pre_run] itself.
-	if not pre_run.is_valid() and prepare_run.is_valid():
+	# Outside the procedure. A host can install capture here, or assign [member hooks] itself.
+	# prepare_run is cleared when this script reparses. The saved flag still installs.
+	if hooks == null and not prepare_run.is_valid():
+		TracyHooks.install_saved(self)
+	if hooks == null and prepare_run.is_valid():
 		prepare_run.call(self)
 
-	var pre_code:Error = await _call_hook(pre_run)
-	if pre_code != OK:
+	if hooks != null and await _pre_hook() != OK:
 		runcode = RetCode.TEST_FAILED
-		fd = {'color':'tomato', 'msg':'pre_run - FAILED'}
+		fd = {'color':'tomato', 'msg':'pre - FAILED'}
 		logp("[color={color}][b]_run() - {msg}[/b][/color]".format(fd) )
 		_finish_run()
+		_release_pin()
 		return
 
 	# An opportunity for derived scripts to set the maximum run time and other
@@ -221,6 +226,7 @@ func run_test() -> void:
 		fd = {'color':'tomato', 'msg':'_setup() - FAILED'}
 		logp("[color={color}][b]_run() - {msg}[/b][/color]".format(fd) )
 		_finish_run()
+		_release_pin()
 		return
 
 	# In case of failure of some unforseen way, I want to make sure the name
@@ -249,29 +255,38 @@ func run_test() -> void:
 	_launch_test_body.call_deferred()
 	await test_finished
 
-	var post_code:Error = await _call_hook(post_run)
-	if post_code != OK and runcode == RetCode.TEST_OK:
+	if hooks != null and await _post_hook() != OK and runcode == RetCode.TEST_OK:
 		runcode = RetCode.TEST_FAILED
-		fd = {'color':'tomato', 'msg':'post_run - FAILED'}
+		fd = {'color':'tomato', 'msg':'post - FAILED'}
 		logp("[color={color}][b]_run() - {msg}[/b][/color]".format(fd) )
+	_release_pin()
 
 
-## Await [param hook] when it is set. Null and non-ints count as [constant OK].
-func _call_hook(hook:Callable) -> Error:
-	if not hook.is_valid():
-		return OK
+## Drop the self-pin and the hooks. [method _run] leaves the pin for this.
+func _release_pin() -> void:
+	hooks = null
+	cycleref = null
+
+
+## [method RunHooks.pre] has no body, so it is not marked a coroutine.
+## Awaiting the call is what lets the override suspend.
+func _pre_hook() -> Error:
 	@warning_ignore('redundant_await')
-	var result:Variant = await hook.call()
-	if typeof(result) != TYPE_INT or result == OK:
-		return OK
-	return FAILED
+	return await hooks.pre()
 
 
-## Forward [param text] when a host installed [member profiler_message].
+## [method RunHooks.post] has no body, so it is not marked a coroutine.
+## Awaiting the call is what lets the override suspend.
+func _post_hook() -> Error:
+	@warning_ignore('redundant_await')
+	return await hooks.post()
+
+
+## Forward [param text] when [member hooks] is installed.
 func _profiler_message(text:String) -> void:
-	if not profiler_message.is_valid():
+	if hooks == null:
 		return
-	profiler_message.call(text)
+	hooks.message(text)
 
 
 ## Reaches `_run_test` outside a message-queue flush.
