@@ -135,8 +135,9 @@ func pre() -> Error:
 		_log("tracy-capture did not connect on port %d. Another server may already be attached." % port)
 		return ERR_CANT_CONNECT
 
-	# [method Profiler.set_enabled] applies on the next frame mark. Cross that mark before the test's [method _setup].
-	await tree.process_frame
+	#STUB [method Profiler.set_enabled] applies on the next frame mark. Cross that mark before the test's [method _setup].
+	#STUB await tree.process_frame
+	#STUB ^^ I foun this not to be needed
 	return OK
 
 

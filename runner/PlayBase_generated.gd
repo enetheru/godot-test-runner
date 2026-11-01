@@ -88,6 +88,9 @@ static var prepare_run:Callable = Callable()
 ## Installed around the procedure. Null skips it. The test keeps this alive.
 var hooks:RunHooks
 
+## [method RunGate.enter] hold for this run. [method _release_pin] drops it.
+var _run_hold:RefCounted
+
 #            ███████ ██  ██████  ███    ██  █████  ██      ███████             #
 #            ██      ██ ██       ████   ██ ██   ██ ██      ██                  #
 #            ███████ ██ ██   ███ ██ ██  ██ ███████ ██      ███████             #
@@ -155,6 +158,7 @@ func _run() -> void:
 func                        _________METHODS_________              ()->void:pass
 
 func run_test() -> void:
+	_run_hold = RunGate.enter()
 	print("Processing: ", get_script().resource_path )
 	# File > Run drops the editor's reference at the first await. The post hook
 	# awaits after [signal test_finished], so the pin has to outlive that signal.
@@ -251,6 +255,10 @@ func run_test() -> void:
 func _release_pin() -> void:
 	hooks = null
 	cycleref = null
+
+	var hold:RefCounted = _run_hold
+	_run_hold = null
+	RunGate.leave( hold )
 
 
 ## [method RunHooks.pre] has no body, so it is not marked a coroutine.
