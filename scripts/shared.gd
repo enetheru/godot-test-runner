@@ -52,6 +52,7 @@ class TestResult extends RefCounted:
 			'output':output
 		}, "  ", false)
 
+
 #         ███    ███ ███████ ████████ ██   ██  ██████  ██████  ███████         #
 #         ████  ████ ██         ██    ██   ██ ██    ██ ██   ██ ██              #
 #         ██ ████ ██ █████      ██    ███████ ██    ██ ██   ██ ███████         #
@@ -64,8 +65,11 @@ static func reducer_to_lines(a:String = "", v:Variant = null) -> String:
 	return str(v)
 
 static var folder_filter:Callable = func(_f:Variant)->bool:return true
+
 static var test_script_filter:Callable = func(_f:Variant)->bool:return true
+
 static var schema_file_filter:Callable = func(_f:Variant)->bool:return true
+
 
 ## Safety cap for junction / symlink cycles. Not a product tree-depth limit.
 const DEFAULT_MAX_SCAN_DEPTH:int = 32

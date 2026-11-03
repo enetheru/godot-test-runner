@@ -7,6 +7,7 @@ extends CommandServerTool
 # unreliable. Service is a Node and completes via begin_run → on_done.
 
 const Common = preload( "_tests_common.gd" )
+const Log = preload( "../logging.gd" )
 const _ConfirmScene = preload( "../../enetheru.command-server/ui/confirm.tscn" )
 const _ConfirmScript = preload( "../../enetheru.command-server/ui/confirm.gd" )
 
@@ -16,11 +17,11 @@ func get_command_name() -> String:
 
 
 func get_description() -> String:
-	return "Confirm-and-run tests (all | group:Name | path | file) [verbose] [debug] [parallel]."
+	return "Confirm-and-run tests (all | group:Name | path | file) [level=<notice|info|debug|trace>] [parallel]."
 
 
 func get_usage() -> String:
-	return "TESTS_RUN <all|group:Name|res://path.gd|file.gd> [verbose] [debug] [parallel]"
+	return "TESTS_RUN <all|group:Name|res://path.gd|file.gd> [level=<notice|info|debug|trace>] [parallel]"
 
 
 func is_privileged() -> bool:
@@ -35,13 +36,10 @@ func get_input_schema() -> Dictionary:
 				"type": "string",
 				"description": "all | group:Name | res://path.gd | file.gd",
 			},
-			"verbose": {
-				"type": "boolean",
-				"description": "Verbose logging for this run.",
-			},
-			"debug": {
-				"type": "boolean",
-				"description": "Debug logging for this run.",
+			"level": {
+				"type": "string",
+				"description": "Inclusive log ceiling for this run: notice, info, debug, or trace.",
+				"enum": ["notice", "info", "debug", "trace"],
 			},
 			"parallel": {
 				"type": "boolean",
@@ -66,10 +64,8 @@ func arguments_from_line( line:String, _tail:String ) -> Dictionary:
 					% " ".join( positional ),
 		}
 	var out:Dictionary = { &"target": positional[0] }
-	if parsed.get( &"verbose_set", false ):
-		out[&"verbose"] = parsed.get( &"verbose", false )
-	if parsed.get( &"debug_set", false ):
-		out[&"debug"] = parsed.get( &"debug", false )
+	if parsed.get( &"lvl_set", false ):
+		out[&"level"] = parsed.get( &"lvl", -1 )
 	if parsed.get( &"parallel_set", false ):
 		out[&"parallel"] = parsed.get( &"parallel", false )
 	return out
@@ -136,15 +132,24 @@ func _begin_parsed(
 		return
 
 	var opts:Dictionary = {}
-	if parsed.has( &"verbose" ) or parsed.has( "verbose" ):
-		opts["verbose"] = Common.bool_arg( parsed, &"verbose", false )
-	if parsed.has( &"debug" ) or parsed.has( "debug" ):
-		opts["debug"] = Common.bool_arg( parsed, &"debug", false )
+	var has_level:bool = parsed.has( &"level" ) or parsed.has( "level" )
+	if has_level:
+		var raw:Variant = parsed[&"level"] if parsed.has( &"level" ) \
+				else parsed["level"]
+		var level:int = Log.parse_level( raw )
+		if level < 0:
+			on_done.call(
+					"ERROR: bad level '%s' (notice|info|debug|trace)" % str( raw )
+			)
+			return
+		opts["lvl"] = level
 	if parsed.has( &"parallel" ) or parsed.has( "parallel" ):
 		opts["parallel"] = Common.bool_arg( parsed, &"parallel", false )
 
-	var use_v:bool = opts.get( "verbose", svc.get( "verbose" ) )
-	var use_d:bool = opts.get( "debug", svc.get( "debug" ) )
+	var use_lvl:int = Log.Level.DEFAULT
+	var got_lvl:Variant = opts.get( "lvl", svc.get( "lvl" ) )
+	if got_lvl is int:
+		use_lvl = got_lvl
 	var use_p:bool = opts.get( "parallel", false )
 
 	var plugin:EditorPlugin = null
@@ -152,11 +157,10 @@ func _begin_parsed(
 	if server_v is EditorPlugin:
 		plugin = server_v
 
-	var label:String = "%s (%d test(s), verbose=%s debug=%s parallel=%s)" % [
+	var label:String = "%s (%d test(s), level=%s parallel=%s)" % [
 			target,
 			paths.size(),
-			str( use_v ),
-			str( use_d ),
+			Log.level_name( use_lvl ),
 			str( use_p ),
 	]
 	_toast( "Command Server: TESTS_RUN awaiting approval", label )
@@ -254,7 +258,11 @@ func _event_bus( plugin:EditorPlugin ) -> RefCounted:
 func _bus_seq( bus:RefCounted ) -> int:
 	if bus == null or not bus.has_method( &"get_seq" ):
 		return 0
-	return int( bus.call( &"get_seq" ) )
+	var seq_v:Variant = bus.call( &"get_seq" )
+	if seq_v is int:
+		var n:int = seq_v
+		return n
+	return 0
 
 
 func _complete_run(

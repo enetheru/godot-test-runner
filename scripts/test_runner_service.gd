@@ -8,6 +8,7 @@ extends Node
 ## (launch every suite without awaiting the previous).
 
 const Shared = preload( "shared.gd" )
+const Log = preload( "../logging.gd" )
 const RetCode = Shared.RetCode
 
 const LAST_JSON_PATH:String = "user://test_runner_last.json"
@@ -28,8 +29,8 @@ var test_path:String = DEFAULT_TEST_PATH
 var max_scan_depth:int = Shared.DEFAULT_MAX_SCAN_DEPTH
 ## Cached groups: { group, folder, scripts:[{file,path}] }
 var groups:Array = []
-var verbose:bool = false
-var debug:bool = false
+## Inclusive [constant Log.Level] copied onto each instance as [code]local_lvl[/code].
+var lvl:int = Log.Level.DEFAULT
 var last_results:Dictionary = {}
 var last_log_path:String = ""
 var is_running:bool = false
@@ -70,26 +71,12 @@ func default_folder_filter( _folder_path:String ) -> bool:
 	return true
 
 
-func set_verbose( v:bool ) -> void:
-	if verbose == v:
+## Inclusive ceiling for the next run. Notice is quiet.
+func set_lvl( level:int ) -> void:
+	if lvl == level:
 		return
-	verbose = v
+	lvl = level
 	flags_changed.emit()
-
-
-func set_debug( d:bool ) -> void:
-	if debug == d:
-		return
-	debug = d
-	flags_changed.emit()
-
-
-func set_flags( v:bool, d:bool ) -> void:
-	var changed:bool = ( verbose != v ) or ( debug != d )
-	verbose = v
-	debug = d
-	if changed:
-		flags_changed.emit()
 
 
 ## Rescan [member test_path] and refresh [member groups].
@@ -268,8 +255,10 @@ func _run_batch(
 			paths:PackedStringArray,
 			opts:Dictionary,
 			on_done:Callable ) -> void:
-	var use_verbose:bool = opts.get( "verbose", verbose )
-	var use_debug:bool = opts.get( "debug", debug )
+	var use_lvl:int = lvl
+	var got_lvl:Variant = opts.get( "lvl", lvl )
+	if got_lvl is int:
+		use_lvl = got_lvl
 	var use_parallel:bool = opts.get( "parallel", false )
 	var stamp:String = Time.get_datetime_string_from_system( false, true )
 	stamp = stamp.replace( ":", "-" ).replace( " ", "_" )
@@ -280,8 +269,7 @@ func _run_batch(
 		"ran": 0,
 		"passed": 0,
 		"failed": 0,
-		"verbose": use_verbose,
-		"debug": use_debug,
+		"lvl": use_lvl,
 		"parallel": use_parallel,
 		"run_id": run_id,
 		"log_path": "",
@@ -289,23 +277,22 @@ func _run_batch(
 	}
 
 	if use_parallel:
-		_run_batch_parallel( paths, use_verbose, use_debug, results, run_id, on_done )
+		_run_batch_parallel( paths, use_lvl, results, run_id, on_done )
 	else:
-		await _run_batch_sequential( paths, use_verbose, use_debug, results, run_id )
+		await _run_batch_sequential( paths, use_lvl, results, run_id )
 		_finish_batch( results, on_done )
 
 
 func _run_batch_sequential(
 			paths:PackedStringArray,
-			use_verbose:bool,
-			use_debug:bool,
+			use_lvl:int,
 			results:Dictionary,
 			run_id:String ) -> void:
 	var total:int = paths.size()
 	var i:int = 0
 	for path:String in paths:
 		i += 1
-		var entry:Dictionary = await _run_one( path, use_verbose, use_debug )
+		var entry:Dictionary = await _run_one( path, use_lvl )
 		var tests_arr:Array = results["tests"]
 		tests_arr.append( entry )
 		results["ran"] = results["ran"] + 1
@@ -324,8 +311,7 @@ func _run_batch_sequential(
 ## concurrent load (UI Run-all). Default remains sequential.
 func _run_batch_parallel(
 			paths:PackedStringArray,
-			use_verbose:bool,
-			use_debug:bool,
+			use_lvl:int,
 			results:Dictionary,
 			run_id:String,
 			on_done:Callable ) -> void:
@@ -350,8 +336,7 @@ func _run_batch_parallel(
 				paths[i],
 				i,
 				total,
-				use_verbose,
-				use_debug,
+				use_lvl,
 				results,
 				run_id,
 				left,
@@ -363,13 +348,12 @@ func _run_one_parallel_slot(
 			path:String,
 			index:int,
 			total:int,
-			use_verbose:bool,
-			use_debug:bool,
+			use_lvl:int,
 			results:Dictionary,
 			run_id:String,
 			left:Array,
 			on_done:Callable ) -> void:
-	var entry:Dictionary = await _run_one( path, use_verbose, use_debug )
+	var entry:Dictionary = await _run_one( path, use_lvl )
 	var tests_arr:Array = results["tests"]
 	tests_arr[index] = entry
 
@@ -398,7 +382,7 @@ func _finish_batch( results:Dictionary, on_done:Callable ) -> void:
 		on_done.call( results )
 
 
-func _run_one( script_path:String, use_verbose:bool, use_debug:bool ) -> Dictionary:
+func _run_one( script_path:String, use_lvl:int ) -> Dictionary:
 	var group_name:String = _group_for_path( script_path )
 	var entry:Dictionary = {
 		"path": script_path,
@@ -440,8 +424,7 @@ func _run_one( script_path:String, use_verbose:bool, use_debug:bool ) -> Diction
 		return entry
 
 	var instance:Object = instance_v
-	_try_set( instance, "_verbose", use_verbose )
-	_try_set( instance, "_debug", use_debug )
+	_try_set( instance, "local_lvl", use_lvl )
 
 	# Hold a hard ref for the await lifetime (same idea as TestBase.cycleref).
 	var _keep:Object = instance
@@ -537,16 +520,22 @@ func _write_results_files( results:Dictionary, run_id:String ) -> void:
 	_write_text( text_path, _format_log( results ) )
 
 
+func _result_lvl( results:Dictionary ) -> int:
+	var got:Variant = results.get( "lvl", Log.Level.DEFAULT )
+	if got is int:
+		return got
+	return Log.Level.DEFAULT
+
+
 func _format_log( results:Dictionary ) -> String:
 	var lines:Array = []
-	lines.append( "run_id=%s ok=%s ran=%s passed=%s failed=%s verbose=%s debug=%s parallel=%s" % [
+	lines.append( "run_id=%s ok=%s ran=%s passed=%s failed=%s lvl=%s parallel=%s" % [
 			str( results.get( "run_id", "" ) ),
 			str( results.get( "ok", false ) ),
 			str( results.get( "ran", 0 ) ),
 			str( results.get( "passed", 0 ) ),
 			str( results.get( "failed", 0 ) ),
-			str( results.get( "verbose", false ) ),
-			str( results.get( "debug", false ) ),
+			Log.level_name( _result_lvl( results ) ),
 			str( results.get( "parallel", false ) ),
 	] )
 	var tests_v:Array = results.get( "tests", [] )
@@ -662,7 +651,7 @@ func format_summary_table( results:Dictionary, bbcode:bool = true ) -> String:
 
 ## Serialize results for TCP/MCP: OK line + BBCode body.
 ## Multi-suite runs print a compact table first. Per-suite logs follow only
-## for failures, or for every suite when verbose / a single test.
+## for failures, or for every suite when info is open / a single test.
 ## Full JSON stays in [member last_log_path] — do not dump it here; `[` in
 ## JSON arrays is not BBCode and [method @GlobalScope.print_rich] would eat it.
 func format_results_reply( results:Dictionary, heading:String = "TESTS_RUN complete" ) -> String:
@@ -683,9 +672,9 @@ func format_results_reply( results:Dictionary, heading:String = "TESTS_RUN compl
 	var lines:PackedStringArray = PackedStringArray()
 	var _n:int = lines.append( header )
 	var tests_v:Array = results.get( "tests", [] )
-	var use_verbose:bool = false
-	use_verbose = results.get( "verbose", false )
-	var dump_all:bool = use_verbose or tests_v.size() <= 1
+	var use_lvl:int = _result_lvl( results )
+	var dump_all:bool = Log.allows( use_lvl, Log.Level.INFO ) \
+			or tests_v.size() <= 1
 	if tests_v.size() > 1:
 		_n = lines.append( "" )
 		_n = lines.append( format_summary_table( results, true ) )

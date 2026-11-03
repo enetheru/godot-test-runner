@@ -3,6 +3,8 @@ extends RefCounted
 
 ## Shared helpers for TESTS_* Command Server handlers.
 
+const Log = preload( "../logging.gd" )
+
 
 static func find_test_runner_plugin() -> EditorPlugin:
 	if not Engine.is_editor_hint():
@@ -84,51 +86,46 @@ static func string_arg( arguments:Dictionary, key:StringName, default_v:String =
 	return str( v ) if v != null else default_v
 
 
-## Parse trailing flag tokens: verbose / debug / parallel (+ =0|1|true|false).
-## Returns remaining positional tokens + flags dict.
+## Parse trailing flag tokens: level= / lvl= and parallel.
+## Returns remaining positional tokens plus the flags.
 static func parse_flags( args:String ) -> Dictionary:
 	var tokens:PackedStringArray = args.strip_edges().split( " ", false )
 	var positional:Array = []
-	var verbose_set:bool = false
-	var debug_set:bool = false
+	var lvl:int = -1
+	var lvl_set:bool = false
 	var parallel_set:bool = false
-	var verbose:bool = false
-	var debug:bool = false
 	var parallel:bool = false
 
 	for t:String in tokens:
 		var low:String = t.to_lower()
-		if low == "verbose" or low == "verbose=1" or low == "verbose=true":
-			verbose = true
-			verbose_set = true
-		elif low == "verbose=0" or low == "verbose=false":
-			verbose = false
-			verbose_set = true
-		elif low == "debug" or low == "debug=1" or low == "debug=true":
-			debug = true
-			debug_set = true
-		elif low == "debug=0" or low == "debug=false":
-			debug = false
-			debug_set = true
+		if low == "level" or low == "lvl":
+			return {
+				&"error": "ERROR: level needs notice, info, debug, or trace",
+			}
+		if low.begins_with( "level=" ) or low.begins_with( "lvl=" ):
+			var name:String = low.substr( low.find( "=" ) + 1 )
+			var got:int = Log.parse_level( name )
+			if got < 0:
+				return { &"error": "ERROR: bad level '%s'" % name }
+			if lvl_set and lvl != got:
+				return { &"error": "ERROR: level given twice" }
+			lvl = got
+			lvl_set = true
 		elif low == "parallel" or low == "parallel=1" or low == "parallel=true":
 			parallel = true
 			parallel_set = true
 		elif low == "parallel=0" or low == "parallel=false":
 			parallel = false
 			parallel_set = true
-		elif low.begins_with( "verbose=" ) \
-		or low.begins_with( "debug=" ) \
-		or low.begins_with( "parallel=" ):
+		elif low.begins_with( "parallel=" ):
 			return { &"error": "ERROR: bad flag token '%s'" % t }
 		else:
 			positional.append( t )
 
 	return {
 		&"positional": positional,
-		&"verbose": verbose,
-		&"debug": debug,
+		&"lvl": lvl,
 		&"parallel": parallel,
-		&"verbose_set": verbose_set,
-		&"debug_set": debug_set,
+		&"lvl_set": lvl_set,
 		&"parallel_set": parallel_set,
 	}

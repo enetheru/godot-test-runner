@@ -2,27 +2,76 @@
 extends EditorPlugin
 
 const MainPanel = preload( "ui/main_panel.tscn" )
-const CHECKLIST = preload( "res/checklist.svg" )
+
 const ServiceScript = preload( "scripts/test_runner_service.gd" )
+
+## Plugin Settings
 const SettingsScript = preload( "scripts/settings.gd" )
 const OptsScript = preload( "scripts/test_runner_opts.gd" )
 const SETTINGS_PREFIX:String = OptsScript.PREFIX
 
-const CS_OWNER:String = "enetheru.test-runner"
+## ExportPlugin
 const _ExportPlugin = preload( "export_plugin.gd" )
 
+## Command Server name
+const CS_OWNER:String = "enetheru.test-runner"
+
+## Icons
+const CHECKLIST = preload( "res/checklist.svg" )
+
+# ██████  ██████   ██████  ██████  ███████ ██████  ████████ ██ ███████ ███████ #
+# ██   ██ ██   ██ ██    ██ ██   ██ ██      ██   ██    ██    ██ ██      ██      #
+# ██████  ██████  ██    ██ ██████  █████   ██████     ██    ██ █████   ███████ #
+# ██      ██   ██ ██    ██ ██      ██      ██   ██    ██    ██ ██           ██ #
+# ██      ██   ██  ██████  ██      ███████ ██   ██    ██    ██ ███████ ███████ #
+func                        ________PROPERTIES_______              ()->void:pass
+
 var main_panel_instance:Control
+
 var service:Node = null
-var opts:OptsScript
+
 var settings_hlp:SettingsScript
-var _cs_plugin:EditorPlugin = null
-var _cs_reloaded_cb:Callable = Callable()
-var _run_pause_cb:Callable = Callable()
-var _cs_pause_warned:bool = false
+
+var opts:OptsScript
+
 var _export_plugin:EditorExportPlugin = null
+
+var _run_pause_cb:Callable = Callable()
+
 ## Set by the gdflatbuffers libtracy editor test. A normal editor leaves it unset.
 var _headless_arm_tries:int = 0
 
+# ]======[ Command Server ]======[
+
+var _cs_plugin:EditorPlugin = null
+
+var _cs_reloaded_cb:Callable = Callable()
+
+var _cs_pause_warned:bool = false
+
+
+#             ███████ ██    ██ ███████ ███    ██ ████████ ███████              #
+#             ██      ██    ██ ██      ████   ██    ██    ██                   #
+#             █████   ██    ██ █████   ██ ██  ██    ██    ███████              #
+#             ██       ██  ██  ██      ██  ██ ██    ██         ██              #
+#             ███████   ████   ███████ ██   ████    ██    ███████              #
+func                        __________EVENTS_________              ()->void:pass
+
+func _on_command_server_reloaded() -> void:
+	# Builtin rescan finished; re-publish our external commands.
+	call_deferred( &"_register_with_command_server" )
+
+
+func _on_test_running( running:bool ) -> void:
+	_set_command_server_paused( running )
+
+
+#      ██████  ██    ██ ███████ ██████  ██████  ██ ██████  ███████ ███████     #
+#     ██    ██ ██    ██ ██      ██   ██ ██   ██ ██ ██   ██ ██      ██          #
+#     ██    ██ ██    ██ █████   ██████  ██████  ██ ██   ██ █████   ███████     #
+#     ██    ██  ██  ██  ██      ██   ██ ██   ██ ██ ██   ██ ██           ██     #
+#      ██████    ████   ███████ ██   ██ ██   ██ ██ ██████  ███████ ███████     #
+func                        ________OVERRIDES________              ()->void:pass
 
 func _init() -> void:
 	var opts_path:String = str(get_script().resource_path).get_base_dir().path_join( "res/opts.tres" )
@@ -57,6 +106,54 @@ func _enter_tree() -> void:
 	if OS.get_environment( "GDFB_HEADLESS_TESTS" ) == "1":
 		call_deferred( &"_arm_headless_tests" )
 
+
+func _exit_tree() -> void:
+	if _export_plugin:
+		remove_export_plugin( _export_plugin )
+		_export_plugin = null
+	_unregister_from_command_server()
+	if main_panel_instance:
+		main_panel_instance.queue_free()
+		main_panel_instance = null
+	if is_instance_valid( service ):
+		service.queue_free()
+		service = null
+
+
+func _has_main_screen() -> bool:
+	return true
+
+
+func _make_visible( visible:bool ) -> void:
+	if main_panel_instance:
+		main_panel_instance.visible = visible
+
+
+func _get_plugin_name() -> String:
+	return "TestRunner"
+
+
+func _get_plugin_icon() -> Texture2D:
+	return CHECKLIST
+
+
+#         ███    ███ ███████ ████████ ██   ██  ██████  ██████  ███████         #
+#         ████  ████ ██         ██    ██   ██ ██    ██ ██   ██ ██              #
+#         ██ ████ ██ █████      ██    ███████ ██    ██ ██   ██ ███████         #
+#         ██  ██  ██ ██         ██    ██   ██ ██    ██ ██   ██      ██         #
+#         ██      ██ ███████    ██    ██   ██  ██████  ██████  ███████         #
+func                        _________METHODS_________              ()->void:pass
+
+func get_test_runner_service() -> Node:
+	return service
+
+
+#       ██ ███    ██ ████████ ███████ ██████  ███    ██  █████  ██             #
+#       ██ ████   ██    ██    ██      ██   ██ ████   ██ ██   ██ ██             #
+#       ██ ██ ██  ██    ██    █████   ██████  ██ ██  ██ ███████ ██             #
+#       ██ ██  ██ ██    ██    ██      ██   ██ ██  ██ ██ ██   ██ ██             #
+#       ██ ██   ████    ██    ███████ ██   ██ ██   ████ ██   ██ ███████        #
+func                        ________INTERNAL_________              ()->void:pass
 
 func _arm_headless_tests() -> void:
 	var fs := EditorInterface.get_resource_filesystem()
@@ -113,39 +210,31 @@ func _headless_tests_done( results:Dictionary ) -> void:
 	get_tree().quit( 0 )
 
 
-func _exit_tree() -> void:
-	if _export_plugin:
-		remove_export_plugin( _export_plugin )
-		_export_plugin = null
-	_unregister_from_command_server()
-	if main_panel_instance:
-		main_panel_instance.queue_free()
-		main_panel_instance = null
-	if is_instance_valid( service ):
-		service.queue_free()
-		service = null
+func _bind_run_pause() -> void:
+	var gate:RunGate = RunGate.shared()
+	_run_pause_cb = _on_test_running
+	if not gate.running_changed.is_connected( _run_pause_cb ):
+		var err:int = gate.running_changed.connect( _run_pause_cb )
+		if err != OK:
+			push_error( "TestRunner: connect running_changed failed: %d" % err )
+	_apply_run_pause()
 
 
-func _has_main_screen() -> bool:
-	return true
+func _unbind_run_pause() -> void:
+	if _run_pause_cb.is_valid():
+		var gate:RunGate = RunGate.shared()
+		if gate.running_changed.is_connected( _run_pause_cb ):
+			gate.running_changed.disconnect( _run_pause_cb )
+		_run_pause_cb = Callable()
+	_set_command_server_paused( false )
 
 
-func _make_visible( visible:bool ) -> void:
-	if main_panel_instance:
-		main_panel_instance.visible = visible
-
-
-func _get_plugin_name() -> String:
-	return "TestRunner"
-
-
-func _get_plugin_icon() -> Texture2D:
-	return CHECKLIST
-
-
-func get_test_runner_service() -> Node:
-	return service
-
+#            ██████ ███    ███ ██████      ███████ ██████  ██    ██            #
+#           ██      ████  ████ ██   ██     ██      ██   ██ ██    ██            #
+#           ██      ██ ████ ██ ██   ██     ███████ ██████  ██    ██            #
+#           ██      ██  ██  ██ ██   ██          ██ ██   ██  ██  ██             #
+#            ██████ ██      ██ ██████      ███████ ██   ██   ████              #
+func                        _________CMD_SRV_________              ()->void:pass
 
 func _register_with_command_server() -> void:
 	_unregister_from_command_server()
@@ -174,11 +263,6 @@ func _register_with_command_server() -> void:
 	_bind_run_pause()
 
 
-func _on_command_server_reloaded() -> void:
-	# Builtin rescan finished; re-publish our external commands.
-	call_deferred( &"_register_with_command_server" )
-
-
 func _unregister_from_command_server() -> void:
 	_unbind_run_pause()
 	if is_instance_valid( _cs_plugin ):
@@ -191,27 +275,6 @@ func _unregister_from_command_server() -> void:
 	_cs_reloaded_cb = Callable()
 
 
-func _bind_run_pause() -> void:
-	var gate:RunGate = RunGate.shared()
-	_run_pause_cb = _on_test_running
-	if not gate.running_changed.is_connected( _run_pause_cb ):
-		var err:int = gate.running_changed.connect( _run_pause_cb )
-		if err != OK:
-			push_error( "TestRunner: connect running_changed failed: %d" % err )
-	_apply_run_pause()
-
-
-func _unbind_run_pause() -> void:
-	if _run_pause_cb.is_valid():
-		var gate:RunGate = RunGate.shared()
-		if gate.running_changed.is_connected( _run_pause_cb ):
-			gate.running_changed.disconnect( _run_pause_cb )
-		_run_pause_cb = Callable()
-	_set_command_server_paused( false )
-
-
-func _on_test_running( running:bool ) -> void:
-	_set_command_server_paused( running )
 
 
 func _apply_run_pause() -> void:

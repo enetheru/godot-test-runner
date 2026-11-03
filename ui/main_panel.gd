@@ -4,16 +4,13 @@ extends VBoxContainer
 # Test Runner
 # TODO - make the script names clickable to load them up in the editor.
 
-#           ████ ███    ███ ██████   ██████  ██████  ████████ ███████          #
-#            ██  ████  ████ ██   ██ ██    ██ ██   ██    ██    ██               #
-#            ██  ██ ████ ██ ██████  ██    ██ ██████     ██    ███████          #
-#            ██  ██  ██  ██ ██      ██    ██ ██   ██    ██         ██          #
-#           ████ ██      ██ ██       ██████  ██   ██    ██    ███████          #
-func                        _________IMPORTS_________              ()->void:pass
+
 
 # Scripts
 const InfoBox = preload('info_box.gd')
 const Shared = preload('../scripts/shared.gd')
+const OptsScript = preload( "../scripts/test_runner_opts.gd" )
+const Log = preload('../logging.gd')
 
 # Classes
 const TestDef = Shared.TestDef
@@ -44,6 +41,7 @@ const color_WARNING = Color.DARK_GOLDENROD
 const color_WARNING_bright = Color.GOLD
 const color_TEST = Color.HOT_PINK
 
+
 # ██████  ██████   ██████  ██████  ███████ ██████  ████████ ██ ███████ ███████ #
 # ██   ██ ██   ██ ██    ██ ██   ██ ██      ██   ██    ██    ██ ██      ██      #
 # ██████  ██████  ██    ██ ██████  █████   ██████     ██    ██ █████   ███████ #
@@ -61,8 +59,7 @@ func                        ________PROPERTIES_______              ()->void:pass
 @onready var stats_counter: RichTextLabel = $Buttons/Center/StatsCounter
 # Top Row Right
 @onready var tracy_btn: CheckButton = $Buttons/Right/Tracy
-@onready var verbose_btn: CheckButton = $Buttons/Right/Verbose
-@onready var debug_btn: CheckButton = $Buttons/Right/Debug
+@onready var lvl_btn: OptionButton = $Buttons/Right/Level
 @onready var clear_btn: Button = $Buttons/Right/ClearResults
 @onready var help_btn: Button = $Buttons/Right/Help
 
@@ -78,23 +75,30 @@ func                        ________PROPERTIES_______              ()->void:pass
 # Runtime
 var test_list:Array[TestDef]
 var test_selection:Dictionary = {}
-const OptsScript = preload( "../scripts/test_runner_opts.gd" )
 
-var test_verbose:bool = false
-var test_debug:bool = false
+
+
+var test_lvl:int = Log.Level.DEFAULT
+
 var test_tracy:bool = false
+
 ## ProjectSettings mirror. The plugin assigns this before the dock enters the tree.
 var opts:OptsScript
+
 ## Optional headless service (Command Server). UI still owns Tree/InfoBoxes.
 var _service:Node = null
 
 # Configuration
 var test_path:String = 'res://tests'
+
 var test_script_filter:Callable = default_script_filter
+
 var test_folder_filter:Callable = default_folder_filter
+
 ## Junction / symlink cycle guard — not a UI depth limit.
 var max_scan_depth:int = Shared.DEFAULT_MAX_SCAN_DEPTH
 
+var already_updating:bool = false
 
 #             ███████ ██    ██ ███████ ███    ██ ████████ ███████              #
 #             ██      ██    ██ ██      ████   ██    ██    ██                   #
@@ -102,17 +106,6 @@ var max_scan_depth:int = Shared.DEFAULT_MAX_SCAN_DEPTH
 #             ██       ██  ██  ██      ██  ██ ██    ██         ██              #
 #             ███████   ████   ███████ ██   ████    ██    ███████              #
 func                        __________EVENTS_________              ()->void:pass
-
-func bind_service( svc:Node ) -> void:
-	_service = svc
-	_apply_opts()
-
-
-## Verbose and debug from TESTS_SET. Writes [member opts] and ProjectSettings.
-func set_run_flags( v:bool, d:bool ) -> void:
-	_store_flag( &"verbose", v )
-	_store_flag( &"debug", d )
-
 
 func _on_run_pressed() -> void:
 	# The button signal drops this state. Awaiting keeps it until the selection finishes.
@@ -138,68 +131,18 @@ func _on_tracy_toggled(toggled_on: bool) -> void:
 	_store_flag( &"tracy", toggled_on )
 
 
-func _on_verbose_toggled(toggled_on: bool) -> void:
-	_store_flag( &"verbose", toggled_on )
-
-
-func _on_debug_toggled(toggled_on: bool) -> void:
-	_store_flag( &"debug", toggled_on )
+func _on_lvl_selected( index:int ) -> void:
+	if index < 0 or index >= Log.CEILINGS.size():
+		return
+	_store_flag( &"lvl", Log.CEILINGS[index] )
 
 
 func _on_opts_changed() -> void:
 	_apply_opts()
 
 
-## This binary registered the Profiler singleton. Stock Godot has no such name.
-func _tracy_supported() -> bool:
-	return Engine.has_singleton(&'Profiler')
-
-
-## Copy [member opts] onto the buttons, the service, and the Tracy hook.
-func _apply_opts() -> void:
-	if opts != null:
-		test_verbose = opts.verbose
-		test_debug = opts.debug
-		test_tracy = opts.tracy
-	var supported:bool = _tracy_supported()
-	if is_node_ready():
-		verbose_btn.set_pressed_no_signal( test_verbose )
-		debug_btn.set_pressed_no_signal( test_debug )
-		tracy_btn.visible = supported
-		tracy_btn.set_pressed_no_signal( test_tracy )
-	var installer:Callable = Callable()
-	if supported and test_tracy:
-		installer = Callable(TracyCapture, &"install")
-	TestBase.prepare_run = installer
-	PlayBase.prepare_run = installer
-	if is_instance_valid( _service ) and _service.has_method( &"set_flags" ):
-		_service.call( &"set_flags", test_verbose, test_debug )
-
-
-## Write one flag through [member opts] into ProjectSettings.
-func _store_flag( prop:StringName, value:bool ) -> void:
-	if opts != null and opts.get( prop ) != value:
-		opts.set( prop, value )
-		var full_path:String = OptsScript.PREFIX.path_join( String( prop ) )
-		ProjectSettings.set_setting( full_path, value )
-		var saved:Error = ProjectSettings.save()
-		if saved != OK:
-			push_warning( "TestRunner: ProjectSettings.save failed (%s)" % error_string( saved ) )
-	_apply_opts()
-
-
 func _on_clear_results_pressed() -> void:
 	clear_results_ui()
-
-
-## Clear InfoBoxes + tree status; also clears service last-results when bound.
-func clear_results_ui() -> void:
-	if is_instance_valid( _service ) and _service.has_method( &"clear_results" ):
-		_service.call( &"clear_results" )
-	regenerate_tree()
-	if info_items:
-		for child in info_items.get_children():
-			child.call_deferred( "queue_free" )
 
 
 func _on_tests_tree_multi_selected(
@@ -253,7 +196,8 @@ func _on_tests_tree_gui_input(event: InputEvent) -> void:
 func                        ________OVERRIDES________              ()->void:pass
 
 func _ready() -> void:
-	if opts != null and not opts.changed.is_connected( _on_opts_changed ):
+	if opts != null \
+	and not opts.changed.is_connected( _on_opts_changed ):
 		@warning_ignore( "return_value_discarded" )
 		opts.changed.connect( _on_opts_changed )
 	_apply_opts()
@@ -261,7 +205,8 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
-	if opts != null and opts.changed.is_connected( _on_opts_changed ):
+	if opts != null \
+	and opts.changed.is_connected( _on_opts_changed ):
 		opts.changed.disconnect( _on_opts_changed )
 
 
@@ -271,6 +216,16 @@ func _exit_tree() -> void:
 #         ██  ██  ██ ██         ██    ██   ██ ██    ██ ██   ██      ██         #
 #         ██      ██ ███████    ██    ██   ██  ██████  ██████  ███████         #
 func                        _________METHODS_________              ()->void:pass
+
+func bind_service( svc:Node ) -> void:
+	_service = svc
+	_apply_opts()
+
+
+## Log level from TESTS_SET. Writes [member opts] and ProjectSettings.
+func set_lvl( level:int ) -> void:
+	_store_flag( &"lvl", level )
+
 
 func default_script_filter( filename:String ) -> bool:
 	return filename.begins_with("test") \
@@ -292,19 +247,7 @@ func collect_tests( _path:String ) -> Array[TestDef]:
 	return tests
 
 
-func _test_def_from_node( node:Dictionary ) -> TestDef:
-	var def:TestDef = TestDef.new()
-	def.name = str( node.get( "name", "" ) )
-	def.folder_path = str( node.get( "folder_path", "" ) )
-	def.test_scripts = node.get( "test_scripts", [] )
-	for child_v:Variant in node.get( "children", [] ):
-		if child_v is Dictionary:
-			var child:Dictionary = child_v
-			def.children.append( _test_def_from_node( child ) )
-	return def
 
-
-var already_updating:bool = false
 func update_stats() -> void:
 	if already_updating: return
 	already_updating = true
@@ -365,22 +308,6 @@ func process_selection() -> void:
 			await process_test( file_item )
 
 
-func _is_file_item( item:TreeItem ) -> bool:
-	if item == null:
-		return false
-	var meta:Variant = item.get_metadata( 0 )
-	return meta is TestDef \
-	and str( item.get_text( 0 ) ).ends_with( ".gd" )
-
-
-func _file_items_under( item:TreeItem ) -> Array[TreeItem]:
-	var out:Array[TreeItem] = []
-	if _is_file_item( item ):
-		out.append( item )
-	for child:TreeItem in item.get_children():
-		out.append_array( _file_items_under( child ) )
-	return out
-
 
 func process_test( file_item:TreeItem ) -> void:
 	if not _is_file_item( file_item ):
@@ -421,12 +348,12 @@ func process_test( file_item:TreeItem ) -> void:
 	elif Engine.is_editor_hint():
 		var instance:TestBase  = script.new()
 		if instance:await run_test_base( instance, result )
-	else:
-		var instance:PlayBase  = script.new()
-		if instance :
-			get_tree().root.add_child(instance, true)
-			await run_play_base( instance, result,  )
-		instance.queue_free()
+	#else:
+		#var instance:PlayBase  = script.new()
+		#if instance :
+			#get_tree().root.add_child(instance, true)
+			#await run_play_base( instance, result,  )
+		#instance.queue_free()
 
 	#Erase our alternate script file after we are done.
 	if not Engine.is_editor_hint():
@@ -436,7 +363,8 @@ func process_test( file_item:TreeItem ) -> void:
 			result.output.append(msg)
 			printerr( msg )
 
-	if (test_verbose or test_debug or result.retcode == RetCode.TEST_FAILED):
+	if Log.allows( test_lvl, Log.Level.INFO ) \
+	or result.retcode == RetCode.TEST_FAILED:
 		info_text = "Empty" if result.output.is_empty() \
 			else result.output.reduce(Shared.reducer_to_lines)
 
@@ -455,22 +383,20 @@ func process_test( file_item:TreeItem ) -> void:
 
 func run_test_base( instance:TestBase, result:TestResult ) -> void:
 	_apply_opts()
-	instance._verbose = test_verbose
-	instance._debug = test_debug
+	instance.local_lvl = test_lvl
 	@warning_ignore('redundant_await')
-	await instance.run_test()
+	await instance.run_harness()
 	result.retcode = instance.runcode as RetCode
 	result.output = instance.output
 
 
-func run_play_base( instance:PlayBase, result:TestResult ) -> void:
-	_apply_opts()
-	instance._verbose = test_verbose
-	instance._debug = test_debug
-	@warning_ignore('redundant_await')
-	await instance.run_test()
-	result.retcode = instance.runcode as RetCode
-	result.output = instance.output
+#func run_play_base( instance:PlayBase, result:TestResult ) -> void:
+	#_apply_opts()
+	#instance.local_lvl = test_lvl
+	#@warning_ignore('redundant_await')
+	#await instance.run_test()
+	#result.retcode = instance.runcode as RetCode
+	#result.output = instance.output
 
 
 func re_write( orig_path:String) -> String:
@@ -510,6 +436,106 @@ extends PlayBase\n"
 	orig_file.close()
 	alt_file.close()
 	return alt_path
+
+
+## Clear InfoBoxes + tree status; also clears service last-results when bound.
+func clear_results_ui() -> void:
+	if is_instance_valid( _service ) and _service.has_method( &"clear_results" ):
+		_service.call( &"clear_results" )
+	regenerate_tree()
+	if info_items:
+		for child in info_items.get_children():
+			child.call_deferred( "queue_free" )
+
+
+#       ██ ███    ██ ████████ ███████ ██████  ███    ██  █████  ██             #
+#       ██ ████   ██    ██    ██      ██   ██ ████   ██ ██   ██ ██             #
+#       ██ ██ ██  ██    ██    █████   ██████  ██ ██  ██ ███████ ██             #
+#       ██ ██  ██ ██    ██    ██      ██   ██ ██  ██ ██ ██   ██ ██             #
+#       ██ ██   ████    ██    ███████ ██   ██ ██   ████ ██   ██ ███████        #
+func                        ________INTERNAL_________              ()->void:pass
+
+## This binary registered the Profiler singleton. Stock Godot has no such name.
+func _tracy_supported() -> bool:
+	return Engine.has_singleton(&'Profiler')
+
+
+## Copy [member opts] onto the buttons, the service, and the Tracy hook.
+func _apply_opts() -> void:
+	if opts != null:
+		test_lvl = opts.lvl
+		test_tracy = opts.tracy
+	var supported:bool = _tracy_supported()
+	if is_node_ready():
+		_sync_lvl_btn()
+		tracy_btn.visible = supported
+		tracy_btn.set_pressed_no_signal( test_tracy )
+	var installer:Callable = Callable()
+	if supported and test_tracy:
+		installer = Callable(TracyCapture, &"install")
+	TestBase.prepare_run = installer
+	#PlayBase.prepare_run = installer
+	if is_instance_valid( _service ) \
+	and _service.has_method( &"set_lvl" ):
+		_service.call( &"set_lvl", test_lvl )
+
+
+## Show [member test_lvl] on the level button. Signals stay blocked.
+func _sync_lvl_btn() -> void:
+	if not is_instance_valid( lvl_btn ):
+		return
+	lvl_btn.set_block_signals( true )
+	if lvl_btn.item_count != Log.CEILINGS.size():
+		lvl_btn.clear()
+		for mask:int in Log.CEILINGS:
+			lvl_btn.add_item( Log.level_label( mask ) )
+	var idx:int = Log.CEILINGS.find( test_lvl )
+	if idx < 0:
+		idx = 0
+	lvl_btn.select( idx )
+	lvl_btn.set_block_signals( false )
+
+
+## Write one flag through [member opts] into ProjectSettings.
+func _store_flag( prop:StringName, value:Variant ) -> void:
+	if opts != null \
+	and opts.get( prop ) != value:
+		opts.set( prop, value )
+		var full_path:String = OptsScript.PREFIX.path_join( String( prop ) )
+		ProjectSettings.set_setting( full_path, value )
+		var saved:Error = ProjectSettings.save()
+		if saved != OK:
+			push_warning( "TestRunner: ProjectSettings.save failed (%s)" % error_string( saved ) )
+	_apply_opts()
+
+
+func _test_def_from_node( node:Dictionary ) -> TestDef:
+	var def:TestDef = TestDef.new()
+	def.name = str( node.get( "name", "" ) )
+	def.folder_path = str( node.get( "folder_path", "" ) )
+	def.test_scripts = node.get( "test_scripts", [] )
+	for child_v:Variant in node.get( "children", [] ):
+		if child_v is Dictionary:
+			var child:Dictionary = child_v
+			def.children.append( _test_def_from_node( child ) )
+	return def
+
+
+func _is_file_item( item:TreeItem ) -> bool:
+	if item == null:
+		return false
+	var meta:Variant = item.get_metadata( 0 )
+	return meta is TestDef \
+	and str( item.get_text( 0 ) ).ends_with( ".gd" )
+
+
+func _file_items_under( item:TreeItem ) -> Array[TreeItem]:
+	var out:Array[TreeItem] = []
+	if _is_file_item( item ):
+		out.append( item )
+	for child:TreeItem in item.get_children():
+		out.append_array( _file_items_under( child ) )
+	return out
 
 
 #                       ████████ ██████  ███████ ███████                       #
@@ -566,25 +592,6 @@ func regenerate_tree() -> void:
 	update_stats()
 
 
-func _add_folder_branch( test_def:TestDef, parent_item:TreeItem ) -> void:
-	# One script is still a folder. Collapsing it put that file on the parent.
-	var folder_item:TreeItem = parent_item.create_child()
-	folder_item.set_text( 0, test_def.name )
-	folder_item.set_selectable( 1, false )
-	folder_item.set_icon( 0, FOLDER_OPEN )
-	folder_item.set_icon_max_width( 0, 16 )
-	_add_folder_contents( test_def, folder_item )
-
-
-func _add_folder_contents( test_def:TestDef, parent_item:TreeItem ) -> void:
-	for child_v:Variant in test_def.children:
-		if child_v is TestDef:
-			var child_def:TestDef = child_v
-			_add_folder_branch( child_def, parent_item )
-	for file:String in test_def.test_scripts:
-		add_action_row( test_def, file, parent_item )
-
-
 func update_tree_item(
 			item:TreeItem,
 			label:String = "PENDING",
@@ -604,3 +611,22 @@ func update_tree_item(
 		_:
 			item.set_custom_bg_color(0, color)
 			item.set_custom_bg_color(1, color)
+
+
+func _add_folder_branch( test_def:TestDef, parent_item:TreeItem ) -> void:
+	# One script is still a folder. Collapsing it put that file on the parent.
+	var folder_item:TreeItem = parent_item.create_child()
+	folder_item.set_text( 0, test_def.name )
+	folder_item.set_selectable( 1, false )
+	folder_item.set_icon( 0, FOLDER_OPEN )
+	folder_item.set_icon_max_width( 0, 16 )
+	_add_folder_contents( test_def, folder_item )
+
+
+func _add_folder_contents( test_def:TestDef, parent_item:TreeItem ) -> void:
+	for child_v:Variant in test_def.children:
+		if child_v is TestDef:
+			var child_def:TestDef = child_v
+			_add_folder_branch( child_def, parent_item )
+	for file:String in test_def.test_scripts:
+		add_action_row( test_def, file, parent_item )

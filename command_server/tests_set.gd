@@ -2,6 +2,7 @@
 extends CommandServerTool
 
 const Common = preload( "_tests_common.gd" )
+const Log = preload( "../logging.gd" )
 
 
 func get_command_name() -> String:
@@ -9,24 +10,21 @@ func get_command_name() -> String:
 
 
 func get_description() -> String:
-	return "Set TestRunner verbose/debug flags without running tests."
+	return "Set the TestRunner log level without running tests."
 
 
 func get_usage() -> String:
-	return "TESTS_SET [verbose|verbose=0|1] [debug|debug=0|1]"
+	return "TESTS_SET level=<notice|info|debug|trace>"
 
 
 func get_input_schema() -> Dictionary:
 	return {
 		"type": "object",
 		"properties": {
-			"verbose": {
-				"type": "boolean",
-				"description": "Enable verbose TestRunner logging.",
-			},
-			"debug": {
-				"type": "boolean",
-				"description": "Enable debug TestRunner logging.",
+			"level": {
+				"type": "string",
+				"description": "Inclusive log ceiling: notice, info, debug, or trace.",
+				"enum": ["notice", "info", "debug", "trace"],
 			},
 		},
 		"additionalProperties": false,
@@ -45,15 +43,9 @@ func arguments_from_line( line:String, _tail:String ) -> Dictionary:
 					get_usage(),
 			],
 		}
-	if not parsed.get( &"verbose_set", false ) \
-	and not parsed.get( &"debug_set", false ):
+	if not parsed.get( &"lvl_set", false ):
 		return { &"error": "ERROR: Usage: " + get_usage() }
-	var out:Dictionary = {}
-	if parsed.get( &"verbose_set", false ):
-		out[&"verbose"] = parsed.get( &"verbose", false )
-	if parsed.get( &"debug_set", false ):
-		out[&"debug"] = parsed.get( &"debug", false )
-	return out
+	return { &"level": parsed.get( &"lvl", -1 ) }
 
 
 func execute( arguments:Dictionary, _context:Dictionary ) -> Dictionary:
@@ -69,26 +61,25 @@ func execute( arguments:Dictionary, _context:Dictionary ) -> Dictionary:
 			return result_from_text( err )
 	else:
 		parsed = arguments
-	var has_v:bool = parsed.has( &"verbose" ) or parsed.has( "verbose" )
-	var has_d:bool = parsed.has( &"debug" ) or parsed.has( "debug" )
-	if not has_v and not has_d:
+	var has_level:bool = parsed.has( &"level" ) or parsed.has( "level" )
+	if not has_level:
 		return result_from_text( "ERROR: Usage: " + get_usage() )
+	var raw:Variant = parsed[&"level"] if parsed.has( &"level" ) else parsed["level"]
+	var level:int = Log.parse_level( raw )
+	if level < 0:
+		return result_from_text(
+				"ERROR: bad level '%s' (notice|info|debug|trace)" % str( raw )
+		)
 	var req:Dictionary = Common.require_service()
 	if req.has( &"error" ):
 		return result_from_text( str( req[&"error"] ) )
 	var svc:Node = req[&"service"]
-	var v:bool = svc.get( "verbose" )
-	var d:bool = svc.get( "debug" )
-	if has_v:
-		v = Common.bool_arg( parsed, &"verbose", v )
-	if has_d:
-		d = Common.bool_arg( parsed, &"debug", d )
-	svc.call( &"set_flags", v, d )
-	_mirror_panel( v, d )
-	return result_from_text( "OK: verbose=%s debug=%s" % [str( v ), str( d )] )
+	svc.call( &"set_lvl", level )
+	_mirror_panel( level )
+	return result_from_text( "OK: level=%s" % Log.level_name( level ) )
 
 
-func _mirror_panel( v:bool, d:bool ) -> void:
+func _mirror_panel( level:int ) -> void:
 	var plugin:EditorPlugin = Common.find_test_runner_plugin()
 	if not is_instance_valid( plugin ):
 		return
@@ -96,16 +87,5 @@ func _mirror_panel( v:bool, d:bool ) -> void:
 	if not ( panel_v is Object ):
 		return
 	var panel:Object = panel_v
-	if panel.has_method( &"set_run_flags" ):
-		panel.call( &"set_run_flags", v, d )
-		return
-	if panel.get( "test_verbose" ) != null:
-		panel.set( "test_verbose", v )
-	if panel.get( "test_debug" ) != null:
-		panel.set( "test_debug", d )
-	if panel.get( "verbose_btn" ) is CheckButton:
-		var vb:CheckButton = panel.get( "verbose_btn" )
-		vb.set_pressed_no_signal( v )
-	if panel.get( "debug_btn" ) is CheckButton:
-		var db:CheckButton = panel.get( "debug_btn" )
-		db.set_pressed_no_signal( d )
+	if panel.has_method( &"set_lvl" ):
+		panel.call( &"set_lvl", level )

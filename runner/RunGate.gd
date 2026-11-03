@@ -22,14 +22,8 @@ static func shared() -> RunGate:
 	return _shared
 
 
-static func enter() -> RefCounted:
+static func create_hold() -> Hold:
 	return Hold.new( shared() )
-
-
-static func leave( hold:RefCounted ) -> void:
-	if hold == null:
-		return
-	hold.call( &"close" )
 
 
 func is_running() -> bool:
@@ -54,19 +48,26 @@ class Hold extends RefCounted:
 	var _gate:RunGate
 	var _open:bool = true
 
+	func _notification(what: int) -> void:
+		if what == NOTIFICATION_PREDELETE:
+			if _open:
+				_gate.pop()
+
 
 	func _init( gate:RunGate ) -> void:
 		_gate = gate
+
+
+	func open() -> void:
+		if _open:
+			return
+		_open = true
 		_gate.push()
 
 
 	## Pop while this hold is still alive.
 	## RefCounted predelete cannot call back into this object.
 	func close() -> void:
-		if not _open:
-			return
-		_open = false
-		var gate:RunGate = _gate
-		_gate = null
-		if gate != null:
-			gate.pop()
+		if _open:
+			_open = false
+			_gate.pop()

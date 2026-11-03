@@ -8,21 +8,14 @@ extends Resource
 ## under [constant PREFIX].
 
 const PREFIX:String = "plugin/test_runner"
+const Log = preload( "../logging.gd" )
 
-## Print the test log for a run.
-@export var verbose:bool = false:
+## Inclusive [constant Log.Level]. Notice is quiet. The numbers are that enum.
+@export_enum( "Notice:15", "Info:31", "Debug:63", "Trace:127" ) var lvl:int = Log.Level.DEFAULT:
 	set(value):
-		if verbose == value:
+		if lvl == value:
 			return
-		verbose = value
-		emit_changed()
-
-## Print the debug log for a run.
-@export var debug:bool = false:
-	set(value):
-		if debug == value:
-			return
-		debug = value
+		lvl = value
 		emit_changed()
 
 ## Install Tracy capture around each run.

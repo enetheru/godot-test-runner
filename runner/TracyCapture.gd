@@ -12,8 +12,10 @@ extends RunHooks
 ## [code]--trim-init[/code]. Another Tracy server already attached refuses
 ## the connection.
 
-const CAPTURE_SECONDS:int = 1
-const CONNECT_WAIT_MSEC:int = 8000
+const CAPTURE_SECONDS:int = 2
+const CONNECT_WAIT_SEC:int = 3
+const CONNECT_WAIT_MSEC:int = 3000
+const CAPTURE_TIMEOUT_MSEC:int = 3000
 ## Every category the singleton accepts.
 const _CATEGORIES:PackedStringArray = [
 	"core", "script", "physics", "render", "render_gpu", "audio",
@@ -30,147 +32,219 @@ const _PYTHON_EXES:PackedStringArray = []
 const _TRACY_SCRIPT_DIRS:PackedStringArray = []
 const _SETTINGS_PREFIX:String = "plugin/test_runner"
 
+const Log := TestBase.Log
+
+# ██████  ██████   ██████  ██████  ███████ ██████  ████████ ██ ███████ ███████ #
+# ██   ██ ██   ██ ██    ██ ██   ██ ██      ██   ██    ██    ██ ██      ██      #
+# ██████  ██████  ██    ██ ██████  █████   ██████     ██    ██ █████   ███████ #
+# ██      ██   ██ ██    ██ ██      ██      ██   ██    ██    ██ ██           ██ #
+# ██      ██   ██  ██████  ██      ███████ ██   ██    ██    ██ ███████ ███████ #
+func                        ________PROPERTIES_______              ()->void:pass
+
+var local_lvl:int = Log.Level.ERROR
+
 var _capture_pid:int = -1
+
 var _trace_path:String = ""
+
 var _capture_connected:bool = false
+
 var _profiler:Object
+
 var _profiler_was_enabled:bool = false
+
 var _arm_profiler:bool = false
+
 ## Category name to the value from before this capture. Empty until the handshake.
 var _saved_categories:Dictionary = {}
+
 ## Feature name to the value from before this capture. Empty until the handshake.
 var _saved_features:Dictionary = {}
-var _test:Object
 
+var _test:TestBase
+
+var capture_started_msec:int
+
+var capture_started_frame:int
+
+var timer:Timer
+
+var _server_already_connected:bool = false
+
+
+#         ███    ███ ███████ ████████ ██   ██  ██████  ██████  ███████         #
+#         ████  ████ ██         ██    ██   ██ ██    ██ ██   ██ ██              #
+#         ██ ████ ██ █████      ██    ███████ ██    ██ ██   ██ ███████         #
+#         ██  ██  ██ ██         ██    ██   ██ ██    ██ ██   ██      ██         #
+#         ██      ██ ███████    ██    ██   ██  ██████  ██████  ███████         #
+func                        _________METHODS_________              ()->void:pass
 
 ## Assign [member TestBase.hooks] when it is still empty.
-static func install(test:Object) -> void:
+static func install( test:Object ) -> void:
 	if test == null:
 		return
 	if test.get(&"hooks") != null:
 		return
 	var capture := TracyCapture.new()
 	capture._test = test
-	# The test's property keeps this RefCounted alive.
+	capture.local_lvl = test.get(&'local_lvl')
 	test.set(&"hooks", capture)
 
 
 ## Install when the saved flag is on and this binary registered the Profiler singleton.
-static func install_saved(test:Object) -> void:
-	if test == null or not Engine.has_singleton(&'Profiler'):
-		return
-	var flag:Variant = ProjectSettings.get_setting(_SETTINGS_PREFIX.path_join("tracy"), false)
-	if not (flag is bool) or not flag:
-		return
-	install(test)
-
-
-func _scene_tree() -> SceneTree:
-	if _test == null:
-		return null
-	var tree_v:Variant = _test.get(&"scene_tree")
-	if tree_v is SceneTree:
-		return tree_v
-	return null
-
-
-func _log(msg:String) -> void:
-	if _test != null and _test.has_method(&"logp"):
-		_test.call(&"logp", msg)
+static func install_saved( test:Object ) -> void:
+	if is_instance_valid(test) \
+	and Engine.has_singleton(&'Profiler'):
+		var flag:Variant = ProjectSettings.get_setting(_SETTINGS_PREFIX.path_join("tracy"), false)
+		if flag is bool and flag:
+			install(test)
 
 
 ## Launch the capture and wait until this process accepts it.
 func pre() -> Error:
-	# The timer starts after this hook returns. [method TestBase._setup] can still lower the cap.
-	var tree:SceneTree = _scene_tree()
-	if tree == null:
-		_log("no SceneTree")
+	#Log.trace({}, self)
+	if _test == null:
+		Log.err("no TestBase")
 		return ERR_UNCONFIGURED
-	_test.set(&"max_runtime_s", 20.0)
-	var exe:String = _capture_exe()
-	if exe.is_empty():
-		_log("tracy-capture was not found")
-		return ERR_FILE_NOT_FOUND
+
 	_profiler = Engine.get_singleton(&'Profiler')
 	if _profiler == null:
-		_log("Profiler singleton is missing. This binary has no Tracy client.")
+		Log.err("Profiler singleton is missing. This binary has no Tracy client.")
 		return ERR_UNAVAILABLE
 
 	var was_v:Variant = _profiler.call(&'is_enabled')
 	_profiler_was_enabled = was_v if was_v is bool else false
+
 	# Silence before the handshake. Recording turns on before the test's [method _setup].
 	_arm_profiler = true
 	_profiler.call(&'set_enabled', false)
+
+	if Profiler.is_server_connected():
+		Log.wrn("Tracy server is already connected")
+		_capture_connected = true
+		if _arm_profiler and _profiler != null:
+			_enable_categories()
+			_enable_features()
+			_profiler.call(&'set_enabled', true)
+		_server_already_connected = true
+		return OK
+
 	var connected_sig:Signal = Signal(_profiler, &'server_connected')
 	if not connected_sig.is_connected(_on_server_connected):
 		@warning_ignore("return_value_discarded")
 		connected_sig.connect(_on_server_connected)
 
-	var script:Script = _test.get_script()
-	var script_path:String = script.resource_path
-	var capture_file:String = script_path.get_file().get_basename() + ".tracy"
-	_trace_path = ProjectSettings.globalize_path(script_path.get_base_dir().path_join(capture_file))
-	var port:int = _capture_port()
+	# The timer starts after this hook returns. [method TestBase._setup] can still lower the cap.
+	var tree:SceneTree = _test.scene_tree
+	if tree == null:
+		Log.err("no SceneTree")
+		return ERR_UNCONFIGURED
+
+	_ensure_timer(tree)
+
+	var exe:String = _capture_exe()
+	if exe.is_empty():
+		Log.err("tracy-capture was not found")
+		return ERR_FILE_NOT_FOUND
+
+	var script_path:String = str(_test.get_script().resource_path)
+	Log.lvl(Log.Level.NOTICE, "test script path: %s" % script_path)
+
+	var capture_file:String = script_path.get_basename() + ".tracy"
+	Log.lvl(Log.Level.NOTICE, "test capture file: %s" % capture_file)
+
+	_trace_path = ProjectSettings.globalize_path(capture_file)
+
 	_capture_connected = false
-	_capture_pid = OS.create_process(exe, PackedStringArray([
+	var _capture_cmd := PackedStringArray([
 		"-o", _trace_path,
 		"-a", "127.0.0.1",
-		"-p", str(port),
+		"-p", str(Profiler.get_port()),
 		"-f",
 		"-s", str(CAPTURE_SECONDS),
-	]))
+	])
+	Log.lvl(Log.Level.NOTICE, "tracy-capture cmd: %s" % _capture_cmd)
+	_capture_pid = OS.create_process(exe, _capture_cmd, false)
+	Log.lvl(Log.Level.NOTICE, "tracy-capture pid: %d" % _capture_pid)
+
 	if _capture_pid < 0:
 		_restore_profiler()
-		_log("tracy-capture failed to start")
+		Log.err("tracy-capture failed to start")
 		return ERR_CANT_CREATE
 
-	var started_msec:int = Time.get_ticks_msec()
-	while not _capture_connected \
-	and Time.get_ticks_msec() - started_msec < CONNECT_WAIT_MSEC:
-		if not OS.is_process_running(_capture_pid):
-			break
-		await tree.process_frame
-	if not _capture_connected:
+	# wait for connection using a timer, the connection signal handler will
+	# trigger this timers timeout. if there is time left on the clock it
+	# succeeded
+	if _capture_pid >= 0 \
+	and OS.is_process_running(_capture_pid):
+		timer.start(CONNECT_WAIT_SEC)
+		timer.paused = false
+		await timer.timeout
+
+	if not timer.time_left:
 		_stop_capture()
-		_log("tracy-capture did not connect on port %d. Another server may already be attached." % port)
+		Log.err("timed out waiting for tracy-capture to connect on port %d." % Profiler.get_port())
 		return ERR_CANT_CONNECT
 
-	#STUB [method Profiler.set_enabled] applies on the next frame mark. Cross that mark before the test's [method _setup].
-	#STUB await tree.process_frame
-	#STUB ^^ I foun this not to be needed
+	if not _capture_connected:
+		_stop_capture()
+		Log.err("tracy-capture did not connect on port %d." % Profiler.get_port())
+		return ERR_CANT_CONNECT
+
+	capture_started_msec = Time.get_ticks_msec()
+
+	# tracy enabled/disabled is deferred until the end of a frame, so if one
+	# hasnt passed since we enabled it, we can delay one before moving forward.
+	if _scene_tree().get_frame() == capture_started_frame:
+		await _scene_tree().physics_frame
 	return OK
 
 
 ## Wait until the capture process saves the file, then crop it.
 func post() -> Error:
+	#Log.trace({}, self)
+	if _server_already_connected:
+		_restore_categories()
+		_restore_features()
+		_profiler.call(&'set_enabled', _profiler_was_enabled)
+		return OK
+
 	# Silence before the wait. The capture process is still connected, and this thread keeps framing.
 	var tree:SceneTree = _scene_tree()
 	if tree == null:
-		_log("no SceneTree")
+		Log.err("no SceneTree")
 		_restore_profiler()
 		return ERR_UNCONFIGURED
+
 	_arm_profiler = false
-	if _profiler != null:
-		_profiler.call(&'set_enabled', false)
-	# One more frame applies the silence. The masks stay wide through that frame.
-	await tree.process_frame
+	_profiler.call(&'set_enabled', false)
+	# tracy enabled/disabled is deferred until the end of a frame, so we need
+	# to wait or we end up adding noise to the trace.
+	await tree.physics_frame
+
 	_restore_categories()
 	_restore_features()
+
 	# [code]-s[/code] ends the process. Killing it would drop the file.
-	var started_msec:int = Time.get_ticks_msec()
-	while _capture_pid >= 0 and OS.is_process_running(_capture_pid) \
-	and Time.get_ticks_msec() - started_msec < CONNECT_WAIT_MSEC:
+	while _capture_pid >= 0 \
+	and OS.is_process_running(_capture_pid) \
+	and Time.get_ticks_msec() - capture_started_msec < (CAPTURE_SECONDS * 1000 + CAPTURE_TIMEOUT_MSEC):
 		await tree.process_frame
-	var still_running:bool = _capture_pid >= 0 and OS.is_process_running(_capture_pid)
+
+	var still_running:bool = _capture_pid >= 0 \
+	and OS.is_process_running(_capture_pid)
+
 	if still_running:
 		_stop_capture()
 		return ERR_TIMEOUT
+
 	_capture_pid = -1
 	_restore_profiler()
 	var cropped:Error = _crop_trace()
 	if cropped != OK:
 		return cropped
-	_log("tracy capture " + _trace_path)
+
+	#Log.err("tracy capture " + _trace_path)
 	return OK
 
 
@@ -182,14 +256,45 @@ func message(text:String) -> void:
 	_profiler.call(&'message', text)
 
 
+func _scene_tree() -> SceneTree:
+	if _test == null:
+		return null
+	return _test.scene_tree
+
+
+#       ██ ███    ██ ████████ ███████ ██████  ███    ██  █████  ██             #
+#       ██ ████   ██    ██    ██      ██   ██ ████   ██ ██   ██ ██             #
+#       ██ ██ ██  ██    ██    █████   ██████  ██ ██  ██ ███████ ██             #
+#       ██ ██  ██ ██    ██    ██      ██   ██ ██  ██ ██ ██   ██ ██             #
+#       ██ ██   ████    ██    ███████ ██   ██ ██   ████ ██   ██ ███████        #
+func                        ________INTERNAL_________              ()->void:pass
+
+func _ensure_timer( scene_tree:SceneTree ) -> void:
+	# Find, or create our timer.
+	var old_timer:Node = scene_tree.root.find_child("TracyCaptureTimer", false)
+	if old_timer:
+		Log.wrn( "Timer was not removed in last run.")
+		old_timer.queue_free()
+
+	timer = Timer.new()
+	timer.one_shot = true
+	timer.name = "TracyCaptureTimer"
+	scene_tree.root.add_child(timer)
+
+
 ## [signal Profiler.server_connected]. The capture process is that server.
 func _on_server_connected() -> void:
+	#Log.trace({}, self)
 	# Same mark as the handshake. Unsilence applies in this flush, then the cases run.
 	_capture_connected = true
-	if _arm_profiler and _profiler != null:
+	if _arm_profiler \
+	and _profiler != null:
 		_enable_categories()
 		_enable_features()
 		_profiler.call(&'set_enabled', true)
+		capture_started_frame = _scene_tree().get_frame()
+	timer.paused = true
+	timer.timeout.emit()
 
 
 ## First existing [code]tracy-capture[/code], or [code]TRACY_CAPTURE[/code] when that file exists.
@@ -207,22 +312,6 @@ func _capture_exe() -> String:
 		if FileAccess.file_exists(candidate):
 			return candidate
 	return ""
-
-
-## Listen port. The editor's environment wins, otherwise 8086.
-func _capture_port() -> int:
-	# The client takes the first free port from 8086 when no port was set.
-	var names:PackedStringArray = [
-		"TRACY_CAPTURE_PORT",
-		"GODOT_PROFILER_PORT",
-		"GODOT_TRACY_PORT",
-		"TRACY_PORT",
-	]
-	for name:String in names:
-		var text:String = OS.get_environment(name)
-		if text.is_valid_int():
-			return text.to_int()
-	return 8086
 
 
 ## Remember each category, then turn them all on. The mask applies to the next zones.
@@ -292,10 +381,11 @@ func _restore_profiler() -> void:
 ## End a capture that will not save.
 func _stop_capture() -> void:
 	# [method OS.kill] does not flush the trace. Use it only when the process failed to connect.
-	if _capture_pid >= 0 and OS.is_process_running(_capture_pid):
+	if _capture_pid >= 0 \
+	and OS.is_process_running(_capture_pid):
 		var killed:Error = OS.kill(_capture_pid)
 		if killed != OK:
-			_log("tracy-capture did not die")
+			Log.err("tracy-capture did not die")
 	_capture_pid = -1
 	_restore_profiler()
 
@@ -304,16 +394,16 @@ func _stop_capture() -> void:
 func _crop_trace() -> Error:
 	# Both scripts refuse an output path equal to the input, so the crop lands in temps first.
 	if _trace_path.is_empty() or not FileAccess.file_exists(_trace_path):
-		_log("tracy capture was not saved")
+		Log.err("tracy capture was not saved")
 		return ERR_FILE_NOT_FOUND
 	var python:String = _python_exe()
 	if python.is_empty():
 		# Trimming is optional. The raw capture is still a successful result.
-		_log("python was not found. Raw capture left at " + _trace_path)
+		Log.wrn("python was not found. Raw capture left at " + _trace_path)
 		return OK
 	var scripts:String = _tracy_script_dir()
 	if scripts.is_empty():
-		_log("tracy python scripts were not found. Set TRACY_SCRIPTS to that folder.")
+		Log.wrn("tracy python scripts were not found. Set TRACY_SCRIPTS to that folder.")
 		return ERR_FILE_NOT_FOUND
 
 	var trimmed:String = _trace_path + ".tail"
@@ -405,10 +495,10 @@ func _run_tracy_script(python:String, script:String, args:PackedStringArray) -> 
 			text += chunk
 	text = text.strip_edges()
 	if code != 0:
-		_log("tracy script failed (" + str(code) + ") " + script.get_file() + "\n" + text)
+		Log.wrn("tracy script failed (" + str(code) + ") " + script.get_file() + "\n" + text)
 		return ERR_SCRIPT_FAILED
 	if not text.is_empty():
-		_log(text)
+		Log.wrn(text)
 	return OK
 
 
@@ -419,25 +509,25 @@ func _install_cropped(tight:String) -> Error:
 	if FileAccess.file_exists(parked):
 		var cleared:Error = DirAccess.remove_absolute(parked)
 		if cleared != OK:
-			_log("could not clear " + parked)
+			Log.wrn("could not clear " + parked)
 			return cleared
 	var moved:Error = DirAccess.rename_absolute(_trace_path, parked)
 	if moved != OK:
-		_log("could not park the raw capture")
+		Log.wrn("could not park the raw capture")
 		return moved
 
 	var placed:Error = DirAccess.rename_absolute(tight, _trace_path)
 	if placed != OK:
 		var back:Error = DirAccess.rename_absolute(parked, _trace_path)
 		if back != OK:
-			_log("cropped trace is at " + tight + " and the raw capture is at " + parked)
+			Log.wrn("cropped trace is at " + tight + " and the raw capture is at " + parked)
 		else:
-			_log("could not install the cropped capture")
+			Log.wrn("could not install the cropped capture")
 		return placed
 
 	var dropped:Error = DirAccess.remove_absolute(parked)
 	if dropped != OK:
-		_log("cropped capture is in place. raw copy remains at " + parked)
+		Log.wrn("cropped capture is in place. raw copy remains at " + parked)
 	return OK
 
 
@@ -448,4 +538,4 @@ func _drop_file(path:String) -> void:
 		return
 	var removed:Error = DirAccess.remove_absolute(path)
 	if removed != OK:
-		_log("could not remove " + path)
+		Log.wrn("could not remove " + path)

@@ -1,4 +1,4 @@
-[gd_scene load_steps=8 format=3 uid="uid://cp6632s1ekh6i"]
+[gd_scene format=3 uid="uid://cp6632s1ekh6i"]
 
 [ext_resource type="Script" uid="uid://d2kuss1cr4mg" path="res://addons/enetheru.test-runner/ui/main_panel.gd" id="1_alnk0"]
 [ext_resource type="Texture2D" uid="uid://c3w4bod4en2gx" path="res://addons/enetheru.test-runner/res/run-all.svg" id="2_73jry"]
@@ -8,7 +8,7 @@
 [ext_resource type="Texture2D" uid="uid://clvd7lgq1sdn3" path="res://addons/enetheru.test-runner/res/trash-can.svg" id="6_blb3b"]
 [ext_resource type="Texture2D" uid="uid://dngr7cckmvug" path="res://addons/enetheru.test-runner/res/circle-question.svg" id="7_5fedl"]
 
-[node name="TestRunner" type="VBoxContainer"]
+[node name="TestRunner" type="VBoxContainer" unique_id=1145744051]
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
@@ -18,53 +18,53 @@ size_flags_horizontal = 3
 size_flags_vertical = 3
 script = ExtResource("1_alnk0")
 
-[node name="Buttons" type="GridContainer" parent="."]
+[node name="Buttons" type="GridContainer" parent="." unique_id=1520639736]
 layout_mode = 2
 size_flags_horizontal = 3
 columns = 3
 
-[node name="Left" type="HBoxContainer" parent="Buttons"]
+[node name="Left" type="HBoxContainer" parent="Buttons" unique_id=2051897267]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 0
 
-[node name="Run" type="Button" parent="Buttons/Left"]
+[node name="Run" type="Button" parent="Buttons/Left" unique_id=613329788]
 layout_mode = 2
-theme_override_colors/icon_disabled_color = Color(1, 1, 1, 1)
-theme_override_colors/icon_hover_pressed_color = Color(1, 1, 1, 1)
-theme_override_colors/icon_hover_color = Color(1, 1, 1, 1)
-theme_override_colors/icon_pressed_color = Color(1, 1, 1, 1)
-theme_override_colors/icon_focus_color = Color(1, 1, 1, 1)
 theme_override_colors/icon_normal_color = Color(1, 1, 1, 1)
+theme_override_colors/icon_focus_color = Color(1, 1, 1, 1)
+theme_override_colors/icon_pressed_color = Color(1, 1, 1, 1)
+theme_override_colors/icon_hover_color = Color(1, 1, 1, 1)
+theme_override_colors/icon_hover_pressed_color = Color(1, 1, 1, 1)
+theme_override_colors/icon_disabled_color = Color(1, 1, 1, 1)
 theme_override_constants/icon_max_width = 24
 text = "Run
 "
 icon = ExtResource("2_73jry")
 
-[node name="Reload" type="Button" parent="Buttons/Left"]
+[node name="Reload" type="Button" parent="Buttons/Left" unique_id=1687762899]
 layout_mode = 2
 theme_override_constants/icon_max_width = 24
 text = "Reload Tests
 "
 icon = ExtResource("5_k3utk")
 
-[node name="Filters" type="Button" parent="Buttons/Left"]
+[node name="Filters" type="Button" parent="Buttons/Left" unique_id=395048789]
 layout_mode = 2
 text = "Filters"
 icon = ExtResource("4_ub16m")
 
-[node name="Folder" type="Button" parent="Buttons/Left"]
+[node name="Folder" type="Button" parent="Buttons/Left" unique_id=900684212]
 layout_mode = 2
 theme_override_constants/icon_max_width = 24
 text = "Folder"
 icon = ExtResource("3_4mcxl")
 
-[node name="Center" type="HBoxContainer" parent="Buttons"]
+[node name="Center" type="HBoxContainer" parent="Buttons" unique_id=39480746]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 0
 
-[node name="StatsCounter" type="RichTextLabel" parent="Buttons/Center"]
+[node name="StatsCounter" type="RichTextLabel" parent="Buttons/Center" unique_id=1611664917]
 layout_mode = 2
 size_flags_horizontal = 3
 bbcode_enabled = true
@@ -75,42 +75,56 @@ autowrap_mode = 0
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="Right" type="HBoxContainer" parent="Buttons"]
+[node name="Right" type="HBoxContainer" parent="Buttons" unique_id=726647946]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 0
 alignment = 2
 
-[node name="Tracy" type="CheckButton" parent="Buttons/Right"]
+[node name="Tracy" type="CheckButton" parent="Buttons/Right" unique_id=1075564059]
 layout_mode = 2
 text = "Tracy"
 
-[node name="Verbose" type="CheckButton" parent="Buttons/Right"]
+[node name="Level" type="OptionButton" parent="Buttons/Right" unique_id=815835025]
 layout_mode = 2
-text = "Verbose"
+tooltip_text = "Log level"
+selected = 4
+item_count = 8
+popup/item_0/text = "Silent"
+popup/item_0/id = 0
+popup/item_1/text = "Critical"
+popup/item_1/id = 1
+popup/item_2/text = "Error"
+popup/item_2/id = 2
+popup/item_3/text = "Warning"
+popup/item_3/id = 3
+popup/item_4/text = "Notice"
+popup/item_4/id = 4
+popup/item_5/text = "Info"
+popup/item_5/id = 5
+popup/item_6/text = "Debug"
+popup/item_6/id = 6
+popup/item_7/text = "Trace"
+popup/item_7/id = 7
 
-[node name="Debug" type="CheckButton" parent="Buttons/Right"]
-layout_mode = 2
-text = "Debug"
-
-[node name="ClearResults" type="Button" parent="Buttons/Right"]
+[node name="ClearResults" type="Button" parent="Buttons/Right" unique_id=878639755]
 layout_mode = 2
 theme_override_constants/icon_max_width = 24
 text = "Clear Results
 "
 icon = ExtResource("6_blb3b")
 
-[node name="Help" type="Button" parent="Buttons/Right"]
+[node name="Help" type="Button" parent="Buttons/Right" unique_id=1470921345]
 layout_mode = 2
 text = "Help"
 icon = ExtResource("7_5fedl")
 
-[node name="TestOutput" type="HSplitContainer" parent="."]
+[node name="TestOutput" type="HSplitContainer" parent="." unique_id=528716040]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
-[node name="TestsTree" type="Tree" parent="TestOutput"]
+[node name="TestsTree" type="Tree" parent="TestOutput" unique_id=111155159]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
@@ -127,28 +141,28 @@ column_titles_visible = true
 select_mode = 2
 scroll_horizontal_enabled = false
 
-[node name="InfoList" type="VBoxContainer" parent="TestOutput"]
+[node name="InfoList" type="VBoxContainer" parent="TestOutput" unique_id=1667280722]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="ScrollContainer" type="ScrollContainer" parent="TestOutput/InfoList"]
+[node name="ScrollContainer" type="ScrollContainer" parent="TestOutput/InfoList" unique_id=913193629]
 layout_mode = 2
 size_flags_vertical = 3
 follow_focus = true
 draw_focus_border = true
 horizontal_scroll_mode = 0
 
-[node name="InfoItems" type="VBoxContainer" parent="TestOutput/InfoList/ScrollContainer"]
+[node name="InfoItems" type="VBoxContainer" parent="TestOutput/InfoList/ScrollContainer" unique_id=29313455]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 8
 
-[node name="PopupPanel" type="PopupPanel" parent="."]
+[node name="PopupPanel" type="PopupPanel" parent="." unique_id=2062072510]
 initial_position = 1
 size = Vector2i(520, 264)
 mouse_passthrough = true
 
-[node name="RichTextLabel" type="RichTextLabel" parent="PopupPanel"]
+[node name="RichTextLabel" type="RichTextLabel" parent="PopupPanel" unique_id=201366319]
 custom_minimum_size = Vector2(512, 256)
 anchors_preset = 15
 anchor_right = 1.0
@@ -172,8 +186,7 @@ autowrap_mode = 0
 [connection signal="pressed" from="Buttons/Left/Filters" to="." method="_on_filters_pressed"]
 [connection signal="pressed" from="Buttons/Left/Folder" to="." method="_on_folder_pressed"]
 [connection signal="toggled" from="Buttons/Right/Tracy" to="." method="_on_tracy_toggled"]
-[connection signal="toggled" from="Buttons/Right/Verbose" to="." method="_on_verbose_toggled"]
-[connection signal="toggled" from="Buttons/Right/Debug" to="." method="_on_debug_toggled"]
+[connection signal="item_selected" from="Buttons/Right/Level" to="." method="_on_lvl_selected"]
 [connection signal="pressed" from="Buttons/Right/ClearResults" to="." method="_on_clear_results_pressed"]
 [connection signal="pressed" from="Buttons/Right/Help" to="PopupPanel" method="popup"]
 [connection signal="button_clicked" from="TestOutput/TestsTree" to="." method="_on_tests_tree_button_clicked"]

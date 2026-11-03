@@ -24,7 +24,7 @@ When **enetheru.command-server** is enabled, this plugin registers
 | `TESTS_LIST` | no | List groups/scripts |
 | `TESTS_RELOAD` | no | Rescan + refresh UI tree |
 | `TESTS_CLEAR` | no | Clear results (UI + service) |
-| `TESTS_SET` | no | `verbose` / `debug` flags |
+| `TESTS_SET` | no | log level `notice` / `info` / `debug` / `trace` |
 | `TESTS_RUN` | **yes** | Confirm dialog, then run |
 | `TESTS_LAST` | no | Last batch JSON |
 

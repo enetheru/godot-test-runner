@@ -41,6 +41,19 @@ enum Level {
 	DEFAULT = NOTICE, ## Alias of [constant NOTICE].
 }
 
+## Inclusive ceilings a host can select. Quietest first.
+## Masks under [constant Level.NOTICE] do not silence notice.
+const CEILINGS:Array[int] = [
+	Level.SILENT,
+	Level.CRITICAL,
+	Level.ERROR,
+	Level.WARNING,
+	Level.NOTICE,
+	Level.INFO,
+	Level.DEBUG,
+	Level.TRACE,
+]
+
 static var Names:Dictionary = {
 	0x00: &"SILENT",
 	0xFF: &"MASK",
@@ -126,9 +139,10 @@ class Bound extends RefCounted:
 
 	## Prints [param args]. [param object] is prefixed when set.
 	func _fallback_trace( args:Dictionary, _object:Object, stack:Array ) -> void:
-		var frame:Dictionary = stack[-1] if not stack.is_empty() else Shim.get_stack_popped(0)[-1]
+		if stack.is_empty(): stack = Shim.get_stack_popped(2)
+		var call_site:Dictionary = stack[0]
 		var _args:String = "()" if args.is_empty() else "(%s)" % str( args )
-		print_rich( Shim.link("{source}:{line}".format(frame), str(frame.function)) + _args )
+		print_rich( "".lpad(stack.size(), "\t"), Shim.link("{source}:{line}".format(call_site), str(call_site.function)) + _args )
 
 
 	## Prints [param content]. The event bit chooses [method push_error],
@@ -224,6 +238,56 @@ static func event_bit( what_lvl:int ) -> int:
 	return 1 << shift
 
 
+## True when [param mask] includes the event bit of [param what_lvl].
+static func allows( mask:int, what_lvl:int ) -> bool:
+	var bit:int = event_bit( what_lvl )
+	if bit == 0:
+		return false
+	return ( mask & bit ) != 0
+
+
+## Inclusive level name. Unknown masks come back as the number.
+static func level_name( mask:int ) -> String:
+	var key:Variant = Level.find_key( mask )
+	if key == null:
+		return str( mask )
+	var text:String = str( key )
+	if text == "DEFAULT":
+		return "NOTICE"
+	return text
+
+
+## Title-case label for [param mask]. Same word as [method level_name].
+static func level_label( mask:int ) -> String:
+	return level_name( mask ).capitalize()
+
+
+## A ceiling name, [code]default[/code], or one of [constant CEILINGS].
+## Anything else is -1.
+static func parse_level( value:Variant ) -> int:
+	if value is int:
+		var n:int = value
+		return _known_ceiling( n )
+	if value is float:
+		var f:float = value
+		return _known_ceiling( int( f ) )
+	var name:String = str( value ).strip_edges().to_lower()
+	if name == "default":
+		return Level.NOTICE
+	if name.is_valid_int():
+		return _known_ceiling( name.to_int() )
+	for mask:int in CEILINGS:
+		if level_name( mask ).to_lower() == name:
+			return mask
+	return -1
+
+
+static func _known_ceiling( n:int ) -> int:
+	if CEILINGS.has( n ):
+		return n
+	return -1
+
+
 ## Returns a BBCode URL link string.
 static func link( url:String, text:String = "" ) -> String:
 	return "[url='{url}'][color=57b3ff]{text}[/color][/url]".format({
@@ -278,3 +342,13 @@ static func wrn( content:Variant, object:Object = null, stack:Array = [] ) -> vo
 	var bound:Bound = _session()
 	if bound.can_log( Level.WARNING, object ):
 		bound.fn_lvl.call( Level.WARNING, content, object, stack )
+
+
+## Message at [param p_lvl]. [param object] is the identity.
+## [param stack] is passed through and not filled here.
+## returns a bool so it can be used in an assert to remove it from release code
+static func ret( p_lvl:int, content:Variant, object:Object = null, stack:Array = [] ) -> bool:
+	var bound:Bound = _session()
+	if bound.can_log( p_lvl, object ):
+		bound.fn_lvl.call( p_lvl, content, object, stack )
+	return true

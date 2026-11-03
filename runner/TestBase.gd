@@ -2,20 +2,14 @@
 class_name TestBase extends EditorScript
 var cycleref: EditorScript
 
-
-#           ████ ███    ███ ██████   ██████  ██████  ████████ ███████          #
-#            ██  ████  ████ ██   ██ ██    ██ ██   ██    ██    ██               #
-#            ██  ██ ████ ██ ██████  ██    ██ ██████     ██    ███████          #
-#            ██  ██  ██  ██ ██      ██    ██ ██   ██    ██         ██          #
-#           ████ ██      ██ ██       ██████  ██   ██    ██    ███████          #
-func                        _________IMPORTS_________              ()->void:pass
-
+const OptsScript = preload( "../scripts/test_runner_opts.gd" )
 const Shared = preload('../scripts/shared.gd')
 const TracyHooks = preload('TracyCapture.gd')
+const Log = preload('../logging.gd')
 const TestResult = Shared.TestResult
 
-## NOTE: Dont forget, OK is 1, FAIL is 0. Which is backwards for the standard
-## case for reasons.
+## NOTE: Dont forget, OK is 1, FAIL is 0.
+## Which is backwards for the standard case for reasons.
 const RetCode = Shared.RetCode
 
 
@@ -32,6 +26,7 @@ const u32_: int = 2084585596				#= |@@|
 const u64: int = 8947009970309311100		#= |******|
 const u64_: int = 8953226703912583292	#= |@@@@@@|
 
+## Character Strings that represent the builtin operator values.
 static var op_string:PackedStringArray = [
 	'==', #  0: OP_EQUAL - Equality operator (==).
 	'!=', #  1: OP_NOT_EQUAL - Inequality operator (!=).
@@ -67,14 +62,20 @@ static var op_string:PackedStringArray = [
 # ██      ██   ██  ██████  ██      ███████ ██   ██    ██    ██ ███████ ███████ #
 func                        ________PROPERTIES_______              ()->void:pass
 
-var scene_tree:SceneTree
+## ProjectSettings mirror. The plugin assigns this before the dock enters the tree.
+var opts:OptsScript
 
-var _verbose:bool = true
-var _debug:bool = false
-var runcode:int = RetCode.TEST_OK
-var output:Array = []
-var max_runtime_s:float = 3
-var timer:Timer
+## using the filename and path garantees a unique name.
+var test_name:String = str(get_script().resource_path).validate_node_name()
+
+## Host assigns this before runs. [method run_test] calls it with this instance
+## when [member hooks] is still empty, after the scene tree is ready and before [method _setup].
+static var prepare_run:Callable = Callable()
+
+## [method RunGate.enter] hold for this run. [method _release_pin] drops it.
+var _run_hold:RunGate.Hold = RunGate.create_hold()
+
+# ]======[ Flags ]======[
 
 ## True after [signal test_finished] for this run (timeout or normal complete).
 ## Makes [method run_test] return on max-runtime even if `_run_test` is stuck.
@@ -83,15 +84,35 @@ var _finished_emitted:bool = false
 ## Max-runtime timer won the race; late `_run_test` completion is ignored.
 var _timed_out:bool = false
 
-## Host assigns this before runs. [method run_test] calls it with this instance
-## when [member hooks] is still empty, after the scene tree is ready and before [method _setup].
-static var prepare_run:Callable = Callable()
+var _test_tracy:bool = false
+
+# ]======[ Variables ]======[
+
+## Inclusive [constant Log.Level]. Notice is quiet. Info and debug raise it.
+var local_lvl:int = Log.Level.ERROR
+
+## The hard limit on how long the test is allowed to run for before timing out.
+var max_runtime_s:float = 1
+
+# ]======[ Run-Time Objects ]======[
+
+## Either the Editor SceneTree or a runtime SceneTree depending on the test
+var scene_tree:SceneTree
+
+## The timer used for timeout
+var timer:Timer
 
 ## Installed around the procedure. Null skips it. The test keeps this alive.
+## TODO, turn hooks into an array
 var hooks:RunHooks
 
-## [method RunGate.enter] hold for this run. [method _release_pin] drops it.
-var _run_hold:RefCounted
+# ]======[ Results ]======[
+
+## A code used for test output
+var runcode:int = RetCode.TEST_OK
+
+## The test output text
+var output:Array = []
 
 #            ███████ ██  ██████  ███    ██  █████  ██      ███████             #
 #            ██      ██ ██       ████   ██ ██   ██ ██      ██                  #
@@ -100,30 +121,41 @@ var _run_hold:RefCounted
 #            ███████ ██  ██████  ██   ████ ██   ██ ███████ ███████             #
 func                        _________SIGNALS_________              ()->void:pass
 
+## triggered immediately after the return of _run_test
 signal test_finished
 
+## Triggered at the end of the run_harness function
+signal harness_finished
+
+
+#             ███████ ██    ██ ███████ ███    ██ ████████ ███████              #
+#             ██      ██    ██ ██      ████   ██    ██    ██                   #
+#             █████   ██    ██ █████   ██ ██  ██    ██    ███████              #
+#             ██       ██  ██  ██      ██  ██ ██    ██         ██              #
+#             ███████   ████   ███████ ██   ████    ██    ███████              #
+func                        __________EVENTS_________              ()->void:pass
+
+## Connected to the timer.timeout
 func _on_timer_timeout() -> void:
-	if _finished_emitted:
-		return
 	_timed_out = true
 	runcode = RetCode.TEST_FAILED
-	logp("[color=salmon]Error: Timeout was reached.[/color]")
-	_finish_run()
+	Log.err("Timeout was reached")
+	test_finished.emit()
 
 
-
-#      ██████  ██    ██ ███████ ██████  ██████  ██ ██████  ███████ ███████     #
-#     ██    ██ ██    ██ ██      ██   ██ ██   ██ ██ ██   ██ ██      ██          #
-#     ██    ██ ██    ██ █████   ██████  ██████  ██ ██   ██ █████   ███████     #
-#     ██    ██  ██  ██  ██      ██   ██ ██   ██ ██ ██   ██ ██           ██     #
-#      ██████    ████   ███████ ██   ██ ██   ██ ██ ██████  ███████ ███████     #
-func                        ________OVERRIDES________              ()->void:pass
+#            ██    ██ ██ ██████  ████████ ██    ██  █████  ██                  #
+#            ██    ██ ██ ██   ██    ██    ██    ██ ██   ██ ██                  #
+#            ██    ██ ██ ██████     ██    ██    ██ ███████ ██                  #
+#             ██  ██  ██ ██   ██    ██    ██    ██ ██   ██ ██                  #
+#              ████   ██ ██   ██    ██     ██████  ██   ██ ███████             #
+func                        _________VIRTUAL_________              ()->void:pass
 
 ## Override this function to perform setup prior to testing.
 func _setup() -> Error:
 	return OK
 
 
+## Override this function to perform cleanup post testing.
 func _cleanup() -> Error:
 	return OK
 
@@ -133,24 +165,33 @@ func _cleanup() -> Error:
 func _run_test() -> RetCode
 
 
+#      ██████  ██    ██ ███████ ██████  ██████  ██ ██████  ███████ ███████     #
+#     ██    ██ ██    ██ ██      ██   ██ ██   ██ ██ ██   ██ ██      ██          #
+#     ██    ██ ██    ██ █████   ██████  ██████  ██ ██   ██ █████   ███████     #
+#     ██    ██  ██  ██  ██      ██   ██ ██   ██ ██ ██   ██ ██           ██     #
+#      ██████    ████   ███████ ██   ██ ██   ██ ██ ██████  ███████ ███████     #
+func                        ________OVERRIDES________              ()->void:pass
+
+func _init() -> void:
+	if opts != null:
+		_apply_opts()
+
+
 ## Calling as an editor script
+## this function is intended only to call run_test()
 func _run() -> void:
+	#Log.trace({}, self)
 	# NOTE: Maintain a reference to ourself, because no-one else will.
 	# Without this, we will be cleaned up before we have had time to do any
-	# asynchronous work. run_test clears the pin after the post hook.
-	# test_finished fires before that hook.
+	# asynchronous work.
+	# As this function itself is a void coroutine, without the cycleref it is
+	# yielded and immediately cleaned up by the engine.
 	cycleref = self
 
-	logp("_run() as editorscript - Started")
-	assert( Thread.is_main_thread(),
-		"A _run() must not be called in a threaded context.\n" + \
-		"TestBase relies on the 'await' keyword and functionality which is." + \
-		"not usable in a threaded context.\n")
-
-	# NOTE: We run asynchronously so that a crash doesnt prevent reporting
-	# the retults
-	run_test.call_deferred()
-	await test_finished
+	Log.lvl(Log.Level.NOTICE, "_run() as editorscript - Started")
+	run_harness()
+	await harness_finished
+	cycleref = null
 
 
 #         ███    ███ ███████ ████████ ██   ██  ██████  ██████  ███████         #
@@ -160,7 +201,117 @@ func _run() -> void:
 #         ██      ██ ███████    ██    ██   ██  ██████  ██████  ███████         #
 func                        _________METHODS_________              ()->void:pass
 
-## Assign [member scene_tree] from the editor base, or from the main loop.
+## The real entry point into the test run, is initially run synchronously,
+## but will yield
+func run_harness() -> void:
+	#Log.trace({}, self)
+	assert( Thread.is_main_thread(),
+		"A run_test() must not be called in a threaded context.\n" + \
+		"TestBase relies on the 'await' keyword and functionality which is." + \
+		"not usable in a threaded context.\n")
+
+	_run_hold.open()
+	#Log.lvl(Log.Level.NOTICE, "Processing: %s" % get_script().resource_path )
+
+	_finished_emitted = false
+
+	_timed_out = false
+
+	# Format Dictionary
+	var tree_ready:Error = _ensure_scene_tree()
+	if tree_ready != OK:
+		runcode = RetCode.TEST_FAILED
+		Log.err("_run() - no SceneTree")
+		_cleanup_harness()
+		return
+
+	_ensure_timer()
+
+	# Outside the procedure. A host can install capture here, or assign [member hooks] itself.
+	# prepare_run is cleared when this script reparses. The saved flag still installs.
+	if hooks == null \
+	and not prepare_run.is_valid():
+		TracyHooks.install_saved(self)
+
+	if hooks == null \
+	and prepare_run.is_valid():
+		prepare_run.call(self)
+
+	@warning_ignore("redundant_await")
+	if hooks != null \
+	and await hooks.pre() != OK:
+		runcode = RetCode.TEST_FAILED
+		Log.err("hooks.pre() failed")
+		_cleanup_harness()
+		return
+
+	# An opportunity for derived scripts to set the maximum run time and other
+	# variables.
+	@warning_ignore('redundant_await')
+	if await _setup() != OK:
+		runcode = RetCode.TEST_FAILED
+		Log.err("_setup() failed")
+		_cleanup_harness()
+		return
+
+	# Wall-clock cap. Fires [signal test_finished] so UI / TESTS_RUN / _run
+	# unblock even when `_run_test` is stuck (never-emitted signal, etc.).
+	timer.start(max_runtime_s)
+
+	# call_deferred runs inside a message-queue flush, and EditorProgress
+	# refuses to open a task there.
+	run_test()
+
+	# wait for the test to finish.
+	#Log.lvl(Log.Level.DEBUG, "Waiting for test_finished")
+	if not _finished_emitted:
+		await test_finished
+
+	if not timer.is_stopped():
+		timer.stop()
+
+	@warning_ignore('redundant_await')
+	if await _cleanup() != OK:
+		Log.err("_cleanup() failed")
+		if runcode == RetCode.TEST_OK:
+			runcode = RetCode.TEST_FAILED
+
+	@warning_ignore("redundant_await")
+	# run the post test hooks
+	if hooks != null \
+	and await hooks.post() != OK \
+	and runcode == RetCode.TEST_OK:
+		runcode = RetCode.TEST_FAILED
+		Log.err("hooks.post() failed")
+
+	_cleanup_harness()
+
+	#Log.lvl(Log.Level.NOTICE, "harness_finished.emit")
+	harness_finished.emit()
+
+
+# Reaches `_run_test` outside a message-queue flush.
+func run_test() -> void:
+	# we initiate a sibling coroutine so a stuck `_run_test` still ends on the timer.
+	@warning_ignore('redundant_await')
+	runcode = await _run_test()
+	_finished_emitted = true
+	test_finished.emit()
+
+
+## This binary registered the Profiler singleton. Stock Godot has no such name.
+func _tracy_supported() -> bool:
+	return Engine.has_singleton(&'Profiler')
+
+
+## Copy [member opts] onto the buttons, the service, and the Tracy hook.
+func _apply_opts() -> void:
+	if opts != null:
+		local_lvl = opts.lvl
+		_test_tracy = opts.tracy and _tracy_supported()
+
+
+# Assign [member scene_tree] from the editor base, or from the main loop.
 func _ensure_scene_tree() -> Error:
 	# The editor base is the tree while a tool script runs. Otherwise use the main loop.
 	if scene_tree != null:
@@ -181,63 +332,7 @@ func _ensure_scene_tree() -> Error:
 	return OK
 
 
-func run_test() -> void:
-	_run_hold = RunGate.enter()
-	print("Processing: ", get_script().resource_path )
-	# File > Run drops the editor's reference at the first await. The post hook
-	# awaits after [signal test_finished], so the pin has to outlive that signal.
-	cycleref = self
-
-	assert( Thread.is_main_thread(),
-		"A run_test() must not be called in a threaded context.\n" + \
-		"TestBase relies on the 'await' keyword and functionality which is." + \
-		"not usable in a threaded context.\n")
-
-	_finished_emitted = false
-	_timed_out = false
-
-	# Format Dictionary
-	var fd:Dictionary
-	var tree_ready:Error = _ensure_scene_tree()
-	if tree_ready != OK:
-		runcode = RetCode.TEST_FAILED
-		fd = {'color':'tomato', 'msg':'no SceneTree'}
-		logp("[color={color}][b]_run() - {msg}[/b][/color]".format(fd) )
-		_finish_run()
-		_release_pin()
-		return
-
-	# Outside the procedure. A host can install capture here, or assign [member hooks] itself.
-	# prepare_run is cleared when this script reparses. The saved flag still installs.
-	if hooks == null and not prepare_run.is_valid():
-		TracyHooks.install_saved(self)
-	if hooks == null and prepare_run.is_valid():
-		prepare_run.call(self)
-
-	if hooks != null and await _pre_hook() != OK:
-		runcode = RetCode.TEST_FAILED
-		fd = {'color':'tomato', 'msg':'pre - FAILED'}
-		logp("[color={color}][b]_run() - {msg}[/b][/color]".format(fd) )
-		_finish_run()
-		_release_pin()
-		return
-
-	# An opportunity for derived scripts to set the maximum run time and other
-	# variables.
-	@warning_ignore('redundant_await')
-	if await _setup() != OK:
-		runcode = RetCode.TEST_FAILED
-		fd = {'color':'tomato', 'msg':'_setup() - FAILED'}
-		logp("[color={color}][b]_run() - {msg}[/b][/color]".format(fd) )
-		_finish_run()
-		_release_pin()
-		return
-
-	# In case of failure of some unforseen way, I want to make sure the name
-	# of our timer node is unique
-	var script:Script = get_script()
-	var test_name:String = script.resource_path.validate_node_name()
-
+func _ensure_timer() -> void:
 	# Find, or create our timer.
 	var old_timer:Node = scene_tree.root.find_child(test_name, false)
 	if old_timer:
@@ -245,129 +340,44 @@ func run_test() -> void:
 		old_timer.queue_free()
 
 	timer = Timer.new()
+	timer.one_shot = true
 	timer.name = test_name
 	scene_tree.root.add_child(timer)
 	@warning_ignore('return_value_discarded')
 	timer.timeout.connect( _on_timer_timeout )
 
-	# Wall-clock cap. Fires [signal test_finished] so UI / TESTS_RUN / _run
-	# unblock even when `_run_test` is stuck (never-emitted signal, etc.).
-	timer.start(max_runtime_s)
 
-	# call_deferred runs inside a message-queue flush, and EditorProgress
-	# refuses to open a task there.
-	_launch_test_body.call_deferred()
-	await test_finished
-
-	if hooks != null and await _post_hook() != OK and runcode == RetCode.TEST_OK:
-		runcode = RetCode.TEST_FAILED
-		fd = {'color':'tomato', 'msg':'post - FAILED'}
-		logp("[color={color}][b]_run() - {msg}[/b][/color]".format(fd) )
-	_release_pin()
+func _cleanup_harness() -> void:
+	#Log.trace({}, self)
+	if is_instance_valid(timer):
+		timer.queue_free()
+		timer = null
 
 
-## Drop the self-pin and the hooks. [method _run] leaves the pin for this.
-func _release_pin() -> void:
-	hooks = null
-	cycleref = null
-
-	var hold:RefCounted = _run_hold
-	_run_hold = null
-	RunGate.leave( hold )
-
-
-## [method RunHooks.pre] has no body, so it is not marked a coroutine.
-## Awaiting the call is what lets the override suspend.
-func _pre_hook() -> Error:
-	@warning_ignore('redundant_await')
-	return await hooks.pre()
-
-
-## [method RunHooks.post] has no body, so it is not marked a coroutine.
-## Awaiting the call is what lets the override suspend.
-func _post_hook() -> Error:
-	@warning_ignore('redundant_await')
-	return await hooks.post()
-
-
-## Forward [param text] when [member hooks] is installed.
+# Forward [param text] when [member hooks] is installed.
 func _profiler_message(text:String) -> void:
 	if hooks == null:
 		return
 	hooks.message(text)
 
 
-## Reaches `_run_test` outside a message-queue flush.
-func _launch_test_body() -> void:
-	#await scene_tree.process_frame
-	if _finished_emitted \
-	or _timed_out:
+func _emit_rich( msg:Variant ) -> void:
+	if not Log.allows( local_lvl, Log.Level.INFO ):
 		return
-	# we initiate a sibling coroutine so a stuck `_run_test` still ends on the timer.
-	await _run_test_body()
+	Log.rich( Log.Level.INFO, msg, self )
 
 
-## Runs `_run_test` + cleanup. No-op tail if max-runtime already finished.
-func _run_test_body() -> void:
-	@warning_ignore('redundant_await')
-	var code:int = await _run_test()
-
-	if _finished_emitted \
-	or _timed_out:
-		# Timeout already reported; abandon late completion.
+## [param args] is formatted only when the debug bit is open.
+func logd( msg:Variant = "", args:Array = [] ) -> void:
+	if not Log.allows( local_lvl, Log.Level.DEBUG ):
 		return
-
-	runcode = code
-	var fd:Dictionary
-	if runcode == RetCode.TEST_OK:
-		fd = {'color':'yellowgreen', 'msg':'OK'}
-	else:
-		fd = {'color':'tomato', 'msg':'FAILED'}
-
-	logp("[color={color}][b]_run() - {msg}[/b][/color]".format(fd) )
-	if _verbose or _debug:
-		output.reduce(Shared.reducer_to_lines)
-
-	@warning_ignore('redundant_await')
-	if await _cleanup() != OK:
-		fd = {'color':'tomato', 'msg':'_cleanup() - FAILED'}
-		logp("[color={color}][b]_run() - {msg}[/b][/color]".format(fd) )
-		if runcode == RetCode.TEST_OK:
-			runcode = RetCode.TEST_FAILED
-
-	if _finished_emitted \
-	or _timed_out:
-		return
-	_finish_run()
-
-
-func _finish_run() -> void:
-	if _finished_emitted:
-		return
-	_finished_emitted = true
-	if is_instance_valid(timer):
-		if not timer.is_stopped():
-			timer.stop()
-		timer.queue_free()
-		timer = null
-	test_finished.emit()
-
-
-func logd( msg:Variant = "" ) -> void:
-	if msg is Array:
+	if not args.is_empty():
+		msg = msg % args
+	elif msg is Array:
 		var array:Array = msg
 		msg = array.reduce( Shared.reducer_to_lines )
-	if _debug:
-		print_rich( msg )
-		output.append( msg )
-
-
-func logp( msg:Variant ) -> void:
-	if msg is Array:
-		var array:Array = msg
-		msg = array.reduce( Shared.reducer_to_lines )
-	if _debug or _verbose: print_rich( msg )
 	output.append( msg )
+	Log.lvl( Log.Level.DEBUG, msg, self )
 
 
 static func sbytes( bytes:PackedByteArray, cols:int = 8 ) -> String:
@@ -414,20 +424,20 @@ func _test_eq( want_v:Variant, got_v:Variant, desc:String = "" ) -> bool:
 		"\twanted: '%s' == got: '%s'" % [want_v, got_v ]])
 	# TODO add the call_site to the error message.
 	output.append.call( msg )
-	if _verbose: print_rich( msg )
+	_emit_rich( msg )
 	return false
 
 
 ## Returns [enum RetCode] 0(TEST_FAILED) on failure, and 1(TEST_OK) on Success.
 func TEST_EQ_RET( want_v:Variant, got_v:Variant, desc:String = "" ) -> RetCode:
-	logd("TEST_EQ_RET(want:'%s' == got:'%s'): %s" % [want_v, got_v, desc])
+	logd("TEST_EQ_RET(want:'%s' == got:'%s'): %s", [want_v, got_v, desc])
 	if _test_eq(want_v, got_v, desc): return RetCode.TEST_OK
 	runcode &= RetCode.TEST_FAILED
 	return RetCode.TEST_FAILED
 
 
 func TEST_EQ( want_v:Variant, got_v:Variant, desc:String = "") -> void:
-	logd("TEST_EQ(want:'%s' == got:'%s'): %s" % [want_v, got_v, desc])
+	logd("TEST_EQ(want:'%s' == got:'%s'): %s", [want_v, got_v, desc])
 	if _test_eq(want_v, got_v, desc): return
 	runcode &= RetCode.TEST_FAILED
 
@@ -438,20 +448,20 @@ func _test_approx( want_v:float, got_v:float, desc:String = "" ) -> bool:
 		"[b][color=salmon]%s: '%s'[/color][/b]" % [Shared.get_call_site(3), desc],
 		"\twanted: '%s' ~= got: '%s'" % [want_v, got_v ]])
 	output.append.call( msg )
-	if _verbose: print_rich( msg )
+	_emit_rich( msg )
 	return false
 
 
 ## Returns [enum RetCode] 0(TEST_FAILED) on failure, and 1(TEST_OK) on Success.
 func TEST_APPROX_RET( want_v:float, got_v:float, desc:String = "" ) -> RetCode:
-	logd("TEST_APPROX_RET(want:'%s' ~= got:'%s'): %s" % [want_v, got_v, desc])
+	logd("TEST_APPROX_RET(want:'%s' ~= got:'%s'): %s", [want_v, got_v, desc])
 	if _test_approx(want_v, got_v, desc ): return RetCode.TEST_OK
 	runcode &= RetCode.TEST_FAILED
 	return RetCode.TEST_FAILED
 
 
 func TEST_APPROX( want_v:float, got_v:float, desc:String = "" ) -> void:
-	logd("TEST_APPROX(want:'%s' ~= got:'%s'): %s" % [want_v, got_v, desc])
+	logd("TEST_APPROX(want:'%s' ~= got:'%s'): %s", [want_v, got_v, desc])
 	if _test_approx(want_v, got_v, desc ): return
 	runcode &= RetCode.TEST_FAILED
 
@@ -463,20 +473,20 @@ func _test_true( value:Variant, desc:String = "" ) -> bool:
 		"\twanted: true | value != (0 & null)",
 		"\tgot: '%s'" % value])
 	output.append.call( msg )
-	if _verbose: print_rich( msg )
+	_emit_rich( msg )
 	return false
 
 
 ## Returns [enum RetCode] 0(TEST_FAILED) on failure, and 1(TEST_OK) on Success.
 func TEST_TRUE_RET( value:Variant, desc:String = "" ) -> RetCode:
-	logd("TEST_TRUE_RET('%s'): %s" % [value, desc])
+	logd("TEST_TRUE_RET('%s'): %s", [value, desc])
 	if _test_true( value, desc ): return RetCode.TEST_OK
 	runcode &= RetCode.TEST_FAILED
 	return RetCode.TEST_FAILED
 
 
 func TEST_TRUE( value:Variant, desc:String = "" ) -> void:
-	logd("TEST_TRUE('%s'): %s" % [value, desc])
+	logd("TEST_TRUE('%s'): %s", [value, desc])
 	if _test_true( value, desc ): return
 	runcode &= RetCode.TEST_FAILED
 
@@ -488,20 +498,20 @@ func _test_false( value:Variant, desc:String = "" ) -> bool:
 		"\twanted: false | value == (0 & null)",
 		"\tgot: '%s'" % value])
 	output.append.call( msg )
-	if _verbose: print_rich( msg )
+	_emit_rich( msg )
 	return false
 
 
 ## Returns [enum RetCode] 0(TEST_FAILED) on failure, and 1(TEST_OK) on Success.
 func TEST_FALSE_RET( value:Variant, desc:String = "" ) -> RetCode:
-	logd("TEST_FALSE_RET('%s'): %s" % [value, desc])
+	logd("TEST_FALSE_RET('%s'): %s", [value, desc])
 	if _test_false( value, desc ): return RetCode.TEST_OK
 	runcode &= RetCode.TEST_FAILED
 	return RetCode.TEST_FAILED
 
 
 func TEST_FALSE( value:Variant, desc:String = "" ) -> void:
-	logd("TEST_FALSE('%s'): %s" % [value, desc])
+	logd("TEST_FALSE('%s'): %s", [value, desc])
 	if _test_false( value, desc ): return
 	runcode &= RetCode.TEST_FAILED
 
@@ -521,19 +531,19 @@ func _test_op( val1:Variant, op:int, val2:Variant, desc:String = ""  ) -> bool:
 		"[b][color=salmon]%s: '%s'[/color][/b]" % [Shared.get_call_site(3), desc],
 		"\tOp: ('%s' %s '%s') is false" % [val1, op_string[op], val2]])
 	output.append.call( msg )
-	if _verbose: print_rich( msg )
+	_emit_rich( msg )
 	return false
 
 
 ## Returns [enum RetCode] 0(TEST_FAILED) on failure, and 1(TEST_OK) on Success.
 func TEST_OP_RET( val1:Variant, op:int, val2:Variant, desc:String = ""  ) -> RetCode:
-	logd("TEST_OP_RET('%s', %s, '%s'): %s" % [val1, op_string[op], val2, desc])
+	logd("TEST_OP_RET('%s', %s, '%s'): %s", [val1, op_string[op], val2, desc])
 	if _test_op(val1, op, val2, desc): return RetCode.TEST_OK
 	runcode &= RetCode.TEST_FAILED
 	return RetCode.TEST_FAILED
 
 
 func TEST_OP( val1:Variant, op:int, val2:Variant, desc:String = ""  ) -> void:
-	logd("TEST_OP('%s', %s, '%s'): %s" % [val1, op_string[op], val2, desc])
+	logd("TEST_OP('%s', %s, '%s'): %s", [val1, op_string[op], val2, desc])
 	if _test_op(val1, op, val2, desc): return
 	runcode &= RetCode.TEST_FAILED
