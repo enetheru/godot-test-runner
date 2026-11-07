@@ -102,7 +102,6 @@ static func install_saved( test:Object ) -> void:
 
 ## Launch the capture and wait until this process accepts it.
 func pre() -> Error:
-	#Log.trace({}, self)
 	if _test == null:
 		Log.err("no TestBase")
 		return ERR_UNCONFIGURED
@@ -202,7 +201,6 @@ func pre() -> Error:
 
 ## Wait until the capture process saves the file, then crop it.
 func post() -> Error:
-	#Log.trace({}, self)
 	if _server_already_connected:
 		_restore_categories()
 		_restore_features()
@@ -244,7 +242,6 @@ func post() -> Error:
 	if cropped != OK:
 		return cropped
 
-	#Log.err("tracy capture " + _trace_path)
 	return OK
 
 
@@ -284,7 +281,6 @@ func _ensure_timer( scene_tree:SceneTree ) -> void:
 
 ## [signal Profiler.server_connected]. The capture process is that server.
 func _on_server_connected() -> void:
-	#Log.trace({}, self)
 	# Same mark as the handshake. Unsilence applies in this flush, then the cases run.
 	_capture_connected = true
 	if _arm_profiler \

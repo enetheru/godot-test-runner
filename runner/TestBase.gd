@@ -180,7 +180,6 @@ func _init() -> void:
 ## Calling as an editor script
 ## this function is intended only to call run_test()
 func _run() -> void:
-	#Log.trace({}, self)
 	# NOTE: Maintain a reference to ourself, because no-one else will.
 	# Without this, we will be cleaned up before we have had time to do any
 	# asynchronous work.
@@ -204,14 +203,12 @@ func                        _________METHODS_________              ()->void:pass
 ## The real entry point into the test run, is initially run synchronously,
 ## but will yield
 func run_harness() -> void:
-	#Log.trace({}, self)
 	assert( Thread.is_main_thread(),
 		"A run_test() must not be called in a threaded context.\n" + \
 		"TestBase relies on the 'await' keyword and functionality which is." + \
 		"not usable in a threaded context.\n")
 
 	_run_hold.open()
-	#Log.lvl(Log.Level.NOTICE, "Processing: %s" % get_script().resource_path )
 
 	_finished_emitted = false
 
@@ -263,7 +260,6 @@ func run_harness() -> void:
 	run_test()
 
 	# wait for the test to finish.
-	#Log.lvl(Log.Level.DEBUG, "Waiting for test_finished")
 	if not _finished_emitted:
 		await test_finished
 
@@ -286,7 +282,6 @@ func run_harness() -> void:
 
 	_cleanup_harness()
 
-	#Log.lvl(Log.Level.NOTICE, "harness_finished.emit")
 	harness_finished.emit()
 
 
@@ -348,7 +343,6 @@ func _ensure_timer() -> void:
 
 
 func _cleanup_harness() -> void:
-	#Log.trace({}, self)
 	if is_instance_valid(timer):
 		timer.queue_free()
 		timer = null
