@@ -8,6 +8,7 @@ extends CommandServerTool
 
 const Common = preload( "_tests_common.gd" )
 const Log = preload( "../logging.gd" )
+const TracyHooks = preload( "../runner/TracyCapture.gd" )
 const _ConfirmScene = preload( "../../enetheru.command-server/ui/confirm.tscn" )
 const _ConfirmScript = preload( "../../enetheru.command-server/ui/confirm.gd" )
 
@@ -17,11 +18,11 @@ func get_command_name() -> String:
 
 
 func get_description() -> String:
-	return "Confirm-and-run tests (all | group:Name | path | file) [level=<notice|info|debug|trace>] [parallel]."
+	return "Confirm-and-run tests (all | group:Name | path | file) [level=<notice|info|debug|trace>] [parallel] [tracy]."
 
 
 func get_usage() -> String:
-	return "TESTS_RUN <all|group:Name|res://path.gd|file.gd> [level=<notice|info|debug|trace>] [parallel]"
+	return "TESTS_RUN <all|group:Name|res://path.gd|file.gd> [level=<notice|info|debug|trace>] [parallel] [tracy]"
 
 
 func is_privileged() -> bool:
@@ -44,6 +45,10 @@ func get_input_schema() -> Dictionary:
 			"parallel": {
 				"type": "boolean",
 				"description": "Launch every suite without awaiting the previous.",
+			},
+			"tracy": {
+				"type": "boolean",
+				"description": "Install Tracy capture for this run. Omitted or false leaves capture off. Requires the Profiler singleton and configured capture paths.",
 			},
 		},
 		"required": ["target"],
@@ -68,6 +73,8 @@ func arguments_from_line( line:String, _tail:String ) -> Dictionary:
 		out[&"level"] = parsed.get( &"lvl", -1 )
 	if parsed.get( &"parallel_set", false ):
 		out[&"parallel"] = parsed.get( &"parallel", false )
+	if parsed.get( &"tracy_set", false ):
+		out[&"tracy"] = parsed.get( &"tracy", false )
 	return out
 
 
@@ -145,6 +152,15 @@ func _begin_parsed(
 		opts["lvl"] = level
 	if parsed.has( &"parallel" ) or parsed.has( "parallel" ):
 		opts["parallel"] = Common.bool_arg( parsed, &"parallel", false )
+	var use_tracy:bool = false
+	if parsed.has( &"tracy" ) or parsed.has( "tracy" ):
+		use_tracy = Common.bool_arg( parsed, &"tracy", false )
+		opts["tracy"] = use_tracy
+	if use_tracy:
+		var tracy_err:String = _tracy_ready_error()
+		if not tracy_err.is_empty():
+			on_done.call( tracy_err )
+			return
 
 	var use_lvl:int = Log.Level.DEFAULT
 	var got_lvl:Variant = opts.get( "lvl", svc.get( "lvl" ) )
@@ -157,11 +173,12 @@ func _begin_parsed(
 	if server_v is EditorPlugin:
 		plugin = server_v
 
-	var label:String = "%s (%d test(s), level=%s parallel=%s)" % [
+	var label:String = "%s (%d test(s), level=%s parallel=%s tracy=%s)" % [
 			target,
 			paths.size(),
 			Log.level_name( use_lvl ),
 			str( use_p ),
+			str( use_tracy ),
 	]
 	_toast( "Command Server: TESTS_RUN awaiting approval", label )
 	_show_confirm_dialog( plugin, svc, paths, opts, label, on_done )
@@ -244,6 +261,14 @@ func _show_confirm_dialog(
 				)
 	)
 	dlg.call( &"open", plugin, host )
+
+
+func _tracy_ready_error() -> String:
+	if not Engine.has_singleton( &"Profiler" ):
+		return "ERROR: Tracy capture needs a Godot binary with the Profiler singleton"
+	if not TracyHooks.is_configured():
+		return "ERROR: Tracy capture is not configured (capture executable, Python, and crop scripts)"
+	return ""
 
 
 func _event_bus( plugin:EditorPlugin ) -> RefCounted:

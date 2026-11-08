@@ -77,6 +77,9 @@ var _run_hold:RunGate.Hold = RunGate.create_hold()
 
 # ]======[ Flags ]======[
 
+## Command batch. -1 follows the host. 0 skips capture. 1 installs it for this run.
+var capture_request:int = -1
+
 ## True after [signal test_finished] for this run (timeout or normal complete).
 ## Makes [method run_test] return on max-runtime even if `_run_test` is stuck.
 var _finished_emitted:bool = false
@@ -226,11 +229,13 @@ func run_harness() -> void:
 
 	# Outside the procedure. A host can install capture here, or assign [member hooks] itself.
 	# prepare_run is cleared when this script reparses. The saved flag still installs.
-	if hooks == null \
+	# capture_request is the command override. The panel leaves it at -1.
+	if capture_request == 1 and hooks == null:
+		TracyHooks.install(self)
+	elif capture_request != 0 and hooks == null \
 	and not prepare_run.is_valid():
 		TracyHooks.install_saved(self)
-
-	if hooks == null \
+	elif capture_request != 0 and hooks == null \
 	and prepare_run.is_valid():
 		prepare_run.call(self)
 

@@ -276,23 +276,26 @@ func _run_batch(
 		"tests": [],
 	}
 
+	var use_tracy:bool = opts.get( "tracy", false )
+	results["tracy"] = use_tracy
 	if use_parallel:
-		_run_batch_parallel( paths, use_lvl, results, run_id, on_done )
+		_run_batch_parallel( paths, use_lvl, use_tracy, results, run_id, on_done )
 	else:
-		await _run_batch_sequential( paths, use_lvl, results, run_id )
+		await _run_batch_sequential( paths, use_lvl, use_tracy, results, run_id )
 		_finish_batch( results, on_done )
 
 
 func _run_batch_sequential(
 			paths:PackedStringArray,
 			use_lvl:int,
+			use_tracy:bool,
 			results:Dictionary,
 			run_id:String ) -> void:
 	var total:int = paths.size()
 	var i:int = 0
 	for path:String in paths:
 		i += 1
-		var entry:Dictionary = await _run_one( path, use_lvl )
+		var entry:Dictionary = await _run_one( path, use_lvl, use_tracy )
 		var tests_arr:Array = results["tests"]
 		tests_arr.append( entry )
 		results["ran"] = results["ran"] + 1
@@ -312,6 +315,7 @@ func _run_batch_sequential(
 func _run_batch_parallel(
 			paths:PackedStringArray,
 			use_lvl:int,
+			use_tracy:bool,
 			results:Dictionary,
 			run_id:String,
 			on_done:Callable ) -> void:
@@ -337,6 +341,7 @@ func _run_batch_parallel(
 				i,
 				total,
 				use_lvl,
+				use_tracy,
 				results,
 				run_id,
 				left,
@@ -349,11 +354,12 @@ func _run_one_parallel_slot(
 			index:int,
 			total:int,
 			use_lvl:int,
+			use_tracy:bool,
 			results:Dictionary,
 			run_id:String,
 			left:Array,
 			on_done:Callable ) -> void:
-	var entry:Dictionary = await _run_one( path, use_lvl )
+	var entry:Dictionary = await _run_one( path, use_lvl, use_tracy )
 	var tests_arr:Array = results["tests"]
 	tests_arr[index] = entry
 
@@ -382,7 +388,7 @@ func _finish_batch( results:Dictionary, on_done:Callable ) -> void:
 		on_done.call( results )
 
 
-func _run_one( script_path:String, use_lvl:int ) -> Dictionary:
+func _run_one( script_path:String, use_lvl:int, use_tracy:bool = false ) -> Dictionary:
 	var group_name:String = _group_for_path( script_path )
 	var entry:Dictionary = {
 		"path": script_path,
@@ -425,11 +431,15 @@ func _run_one( script_path:String, use_lvl:int ) -> Dictionary:
 
 	var instance:Object = instance_v
 	_try_set( instance, "local_lvl", use_lvl )
+	# 0 skips capture even when the panel toggle is on. 1 installs it for this run.
+	_try_set( instance, "capture_request", 1 if use_tracy else 0 )
 
 	# Hold a hard ref for the await lifetime (same idea as TestBase.cycleref).
 	var _keep:Object = instance
 	@warning_ignore( "redundant_await" )
-	if instance.has_method( &"run_test" ):
+	if instance.has_method( &"run_harness" ):
+		await instance.call( &"run_harness" )
+	elif instance.has_method( &"run_test" ):
 		await instance.call( &"run_test" )
 	else:
 		entry["output"] = ["run_test missing after type check: %s" % script_path]

@@ -86,7 +86,7 @@ static func string_arg( arguments:Dictionary, key:StringName, default_v:String =
 	return str( v ) if v != null else default_v
 
 
-## Parse trailing flag tokens: level= / lvl= and parallel.
+## Parse trailing flag tokens: level= / lvl=, parallel, and tracy.
 ## Returns remaining positional tokens plus the flags.
 static func parse_flags( args:String ) -> Dictionary:
 	var tokens:PackedStringArray = args.strip_edges().split( " ", false )
@@ -95,6 +95,8 @@ static func parse_flags( args:String ) -> Dictionary:
 	var lvl_set:bool = false
 	var parallel_set:bool = false
 	var parallel:bool = false
+	var tracy_set:bool = false
+	var tracy:bool = false
 
 	for t:String in tokens:
 		var low:String = t.to_lower()
@@ -119,6 +121,14 @@ static func parse_flags( args:String ) -> Dictionary:
 			parallel_set = true
 		elif low.begins_with( "parallel=" ):
 			return { &"error": "ERROR: bad flag token '%s'" % t }
+		elif low == "tracy" or low == "tracy=1" or low == "tracy=true":
+			tracy = true
+			tracy_set = true
+		elif low == "tracy=0" or low == "tracy=false":
+			tracy = false
+			tracy_set = true
+		elif low.begins_with( "tracy=" ):
+			return { &"error": "ERROR: bad flag token '%s'" % t }
 		else:
 			positional.append( t )
 
@@ -126,6 +136,8 @@ static func parse_flags( args:String ) -> Dictionary:
 		&"positional": positional,
 		&"lvl": lvl,
 		&"parallel": parallel,
+		&"tracy": tracy,
 		&"lvl_set": lvl_set,
 		&"parallel_set": parallel_set,
+		&"tracy_set": tracy_set,
 	}
