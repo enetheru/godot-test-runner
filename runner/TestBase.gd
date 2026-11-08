@@ -94,8 +94,22 @@ var _test_tracy:bool = false
 ## Inclusive [constant Log.Level]. Notice is quiet. Info and debug raise it.
 var local_lvl:int = Log.Level.ERROR
 
-## The hard limit on how long the test is allowed to run for before timing out.
-var max_runtime_s:float = 1
+## Budget for setup, the body, and cleanup. Set it in [method _configure].
+## The abort timer starts when setup starts. Tracy adds [code]tracy_pad_s[/code].
+var harness_time_s:float = 1.0
+
+## Milliseconds when setup was about to start. Capture uses this against its launch.
+var harness_mark_msec:int = 0
+
+## Measured phase lengths in seconds. Negative means that phase did not finish.
+var setup_s:float = -1.0
+var run_s:float = -1.0
+var cleanup_s:float = -1.0
+
+var _setup_done:bool = false
+var _setup_error:Error = OK
+var _cleanup_done:bool = false
+var _cleanup_error:Error = OK
 
 # ]======[ Run-Time Objects ]======[
 
@@ -142,7 +156,7 @@ func                        __________EVENTS_________              ()->void:pass
 func _on_timer_timeout() -> void:
 	_timed_out = true
 	runcode = RetCode.TEST_FAILED
-	Log.err("Timeout was reached")
+	Log.err("Timeout was reached", self)
 	test_finished.emit()
 
 
@@ -152,6 +166,11 @@ func _on_timer_timeout() -> void:
 #             ██  ██  ██ ██   ██    ██    ██    ██ ██   ██ ██                  #
 #              ████   ██ ██   ██    ██     ██████  ██   ██ ███████             #
 func                        _________VIRTUAL_________              ()->void:pass
+
+## Assign [member harness_time_s] here. Runs before capture starts. No await.
+func _configure() -> void:
+	pass
+
 
 ## Override this function to perform setup prior to testing.
 func _setup() -> Error:
@@ -190,7 +209,7 @@ func _run() -> void:
 	# yielded and immediately cleaned up by the engine.
 	cycleref = self
 
-	Log.lvl(Log.Level.NOTICE, "_run() as editorscript - Started")
+	Log.lvl(Log.Level.NOTICE, "_run() as editorscript - Started", self)
 	run_harness()
 	await harness_finished
 	cycleref = null
@@ -214,18 +233,26 @@ func run_harness() -> void:
 	_run_hold.open()
 
 	_finished_emitted = false
-
 	_timed_out = false
+	_setup_done = false
+	_cleanup_done = false
+	_setup_error = OK
+	_cleanup_error = OK
+	setup_s = -1.0
+	run_s = -1.0
+	cleanup_s = -1.0
+	harness_mark_msec = 0
 
 	# Format Dictionary
 	var tree_ready:Error = _ensure_scene_tree()
 	if tree_ready != OK:
 		runcode = RetCode.TEST_FAILED
-		Log.err("_run() - no SceneTree")
+		Log.err("_run() - no SceneTree", self)
 		_cleanup_harness()
 		return
 
 	_ensure_timer()
+	_configure()
 
 	# Outside the procedure. A host can install capture here, or assign [member hooks] itself.
 	# prepare_run is cleared when this script reparses. The saved flag still installs.
@@ -243,60 +270,111 @@ func run_harness() -> void:
 	if hooks != null \
 	and await hooks.pre() != OK:
 		runcode = RetCode.TEST_FAILED
-		Log.err("hooks.pre() failed")
+		Log.err("hooks.pre() failed", self)
 		_cleanup_harness()
+		harness_finished.emit()
 		return
 
-	# An opportunity for derived scripts to set the maximum run time and other
-	# variables.
-	@warning_ignore('redundant_await')
-	if await _setup() != OK:
+	# The budget covers setup, the body, and cleanup. A stuck setup has to lose.
+	harness_mark_msec = Time.get_ticks_msec()
+	timer.start(maxf(harness_time_s, 0.001))
+
+	_run_setup()
+	if not _setup_done \
+	and not _timed_out:
+		await test_finished
+
+	if _timed_out:
+		await _finish_hooks()
+		return
+
+	if not _setup_done \
+	or _setup_error != OK:
 		runcode = RetCode.TEST_FAILED
-		Log.err("_setup() failed")
-		_cleanup_harness()
+		Log.err("_setup() failed", self)
+		await _finish_hooks()
 		return
-
-	# Wall-clock cap. Fires [signal test_finished] so UI / TESTS_RUN / _run
-	# unblock even when `_run_test` is stuck (never-emitted signal, etc.).
-	timer.start(max_runtime_s)
 
 	# call_deferred runs inside a message-queue flush, and EditorProgress
 	# refuses to open a task there.
 	run_test()
 
-	# wait for the test to finish.
-	if not _finished_emitted:
+	if not _finished_emitted \
+	and not _timed_out:
 		await test_finished
 
-	if not timer.is_stopped():
+	if _timed_out:
+		await _finish_hooks()
+		return
+
+	_run_cleanup()
+	if not _cleanup_done \
+	and not _timed_out:
+		await test_finished
+
+	if is_instance_valid(timer) \
+	and not timer.is_stopped():
 		timer.stop()
 
-	@warning_ignore('redundant_await')
-	if await _cleanup() != OK:
-		Log.err("_cleanup() failed")
+	if not _timed_out \
+	and _cleanup_error != OK:
+		Log.err("_cleanup() failed", self)
 		if runcode == RetCode.TEST_OK:
 			runcode = RetCode.TEST_FAILED
 
-	@warning_ignore("redundant_await")
-	# run the post test hooks
-	if hooks != null \
-	and await hooks.post() != OK \
-	and runcode == RetCode.TEST_OK:
-		runcode = RetCode.TEST_FAILED
-		Log.err("hooks.post() failed")
+	await _finish_hooks()
 
-	_cleanup_harness()
 
-	harness_finished.emit()
+func _run_setup() -> void:
+	var t0:int = Time.get_ticks_msec()
+	_setup_error = await _setup()
+	setup_s = (Time.get_ticks_msec() - t0) / 1000.0
+	_setup_done = true
+	if _timed_out:
+		return
+	test_finished.emit()
+
+
+func _run_cleanup() -> void:
+	var t0:int = Time.get_ticks_msec()
+	_cleanup_error = await _cleanup()
+	cleanup_s = (Time.get_ticks_msec() - t0) / 1000.0
+	_cleanup_done = true
+	if _timed_out:
+		return
+	test_finished.emit()
 
 
 # Reaches `_run_test` outside a message-queue flush.
 func run_test() -> void:
-	# we initiate a sibling coroutine so a stuck `_run_test` still ends on the timer.
+	# A sibling coroutine so a stuck `_run_test` still ends on the timer.
+	var t0:int = Time.get_ticks_msec()
 	@warning_ignore('redundant_await')
 	runcode = await _run_test()
+	run_s = (Time.get_ticks_msec() - t0) / 1000.0
 	_finished_emitted = true
+	if _timed_out:
+		return
 	test_finished.emit()
+
+
+func _finish_hooks() -> void:
+	@warning_ignore("redundant_await")
+	if hooks != null \
+	and await hooks.post() != OK \
+	and runcode == RetCode.TEST_OK:
+		runcode = RetCode.TEST_FAILED
+		Log.err("hooks.post() failed", self)
+	_log_phases()
+	_cleanup_harness()
+	harness_finished.emit()
+
+
+func _log_phases() -> void:
+	var line:String = "phases setup=%.3f run=%.3f cleanup=%.3f" % [
+		setup_s, run_s, cleanup_s,
+	]
+	Log.lvl(Log.Level.NOTICE, line, self)
 
 
 ## This binary registered the Profiler singleton. Stock Godot has no such name.
@@ -375,7 +453,6 @@ func logd( msg:Variant = "", args:Array = [] ) -> void:
 	elif msg is Array:
 		var array:Array = msg
 		msg = array.reduce( Shared.reducer_to_lines )
-	output.append( msg )
 	Log.lvl( Log.Level.DEBUG, msg, self )
 
 

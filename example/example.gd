@@ -6,7 +6,7 @@ extends TestBase
 
 # var output:Array is where all the text is appended.
 
-# var max_runtime_s:float is how long the test is allowed to run before timing out
+# var harness_time_s:float is the budget for setup, the body, and cleanup. Set it in _configure().
 
 # signal test_finished is triggered at the end.
 

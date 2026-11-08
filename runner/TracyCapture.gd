@@ -12,7 +12,6 @@ extends RunHooks
 ## [code]--trim-init[/code]. Another Tracy server already attached refuses
 ## the connection.
 
-const CAPTURE_SECONDS:int = 2
 const CONNECT_WAIT_SEC:int = 3
 const CONNECT_WAIT_MSEC:int = 3000
 const CAPTURE_TIMEOUT_MSEC:int = 3000
@@ -65,6 +64,13 @@ var _test:TestBase
 
 var capture_started_msec:int
 
+## Milliseconds when [code]tracy-capture[/code] was launched, and when it exited.
+var capture_launched_msec:int = 0
+var capture_ended_msec:int = 0
+
+## How long [method post] waits for [code]-s[/code] to close the file.
+var _capture_budget_msec:int = 0
+
 var capture_started_frame:int
 
 var timer:Timer
@@ -103,12 +109,12 @@ static func install_saved( test:Object ) -> void:
 ## Launch the capture and wait until this process accepts it.
 func pre() -> Error:
 	if _test == null:
-		Log.err("no TestBase")
+		_log_err("no TestBase")
 		return ERR_UNCONFIGURED
 
 	_profiler = Engine.get_singleton(&'Profiler')
 	if _profiler == null:
-		Log.err("Profiler singleton is missing. This binary has no Tracy client.")
+		_log_err("Profiler singleton is missing. This binary has no Tracy client.")
 		return ERR_UNAVAILABLE
 
 	var was_v:Variant = _profiler.call(&'is_enabled')
@@ -119,7 +125,7 @@ func pre() -> Error:
 	_profiler.call(&'set_enabled', false)
 
 	if Profiler.is_server_connected():
-		Log.wrn("Tracy server is already connected")
+		_log_wrn("Tracy server is already connected")
 		_capture_connected = true
 		if _arm_profiler and _profiler != null:
 			_enable_categories()
@@ -133,42 +139,44 @@ func pre() -> Error:
 		@warning_ignore("return_value_discarded")
 		connected_sig.connect(_on_server_connected)
 
-	# The timer starts after this hook returns. [method TestBase._setup] can still lower the cap.
 	var tree:SceneTree = _test.scene_tree
 	if tree == null:
-		Log.err("no SceneTree")
+		_log_err("no SceneTree")
 		return ERR_UNCONFIGURED
 
 	_ensure_timer(tree)
 
 	var exe:String = _capture_exe()
 	if exe.is_empty():
-		Log.err("tracy-capture was not found")
+		_log_err("tracy-capture was not found")
 		return ERR_FILE_NOT_FOUND
 
 	var script_path:String = str(_test.get_script().resource_path)
-	Log.lvl(Log.Level.NOTICE, "test script path: %s" % script_path)
+	_log_note("test script path: %s" % script_path)
 
 	var capture_file:String = script_path.get_basename() + ".tracy"
-	Log.lvl(Log.Level.NOTICE, "test capture file: %s" % capture_file)
+	_log_note("test capture file: %s" % capture_file)
 
 	_trace_path = ProjectSettings.globalize_path(capture_file)
 
 	_capture_connected = false
+	var window_sec:int = _capture_window_sec()
+	_capture_budget_msec = window_sec * 1000 + CAPTURE_TIMEOUT_MSEC
 	var _capture_cmd := PackedStringArray([
 		"-o", _trace_path,
 		"-a", "127.0.0.1",
 		"-p", str(Profiler.get_port()),
 		"-f",
-		"-s", str(CAPTURE_SECONDS),
+		"-s", str(window_sec),
 	])
-	Log.lvl(Log.Level.NOTICE, "tracy-capture cmd: %s" % _capture_cmd)
+	_log_note("tracy-capture cmd: %s" % _capture_cmd)
+	capture_launched_msec = Time.get_ticks_msec()
 	_capture_pid = OS.create_process(exe, _capture_cmd, false)
-	Log.lvl(Log.Level.NOTICE, "tracy-capture pid: %d" % _capture_pid)
+	_log_note("tracy-capture pid: %d" % _capture_pid)
 
 	if _capture_pid < 0:
 		_restore_profiler()
-		Log.err("tracy-capture failed to start")
+		_log_err("tracy-capture failed to start")
 		return ERR_CANT_CREATE
 
 	# wait for connection using a timer, the connection signal handler will
@@ -182,12 +190,12 @@ func pre() -> Error:
 
 	if not timer.time_left:
 		_stop_capture()
-		Log.err("timed out waiting for tracy-capture to connect on port %d." % Profiler.get_port())
+		_log_err("timed out waiting for tracy-capture to connect on port %d." % Profiler.get_port())
 		return ERR_CANT_CONNECT
 
 	if not _capture_connected:
 		_stop_capture()
-		Log.err("tracy-capture did not connect on port %d." % Profiler.get_port())
+		_log_err("tracy-capture did not connect on port %d." % Profiler.get_port())
 		return ERR_CANT_CONNECT
 
 	capture_started_msec = Time.get_ticks_msec()
@@ -210,7 +218,7 @@ func post() -> Error:
 	# Silence before the wait. The capture process is still connected, and this thread keeps framing.
 	var tree:SceneTree = _scene_tree()
 	if tree == null:
-		Log.err("no SceneTree")
+		_log_err("no SceneTree")
 		_restore_profiler()
 		return ERR_UNCONFIGURED
 
@@ -226,7 +234,7 @@ func post() -> Error:
 	# [code]-s[/code] ends the process. Killing it would drop the file.
 	while _capture_pid >= 0 \
 	and OS.is_process_running(_capture_pid) \
-	and Time.get_ticks_msec() - capture_started_msec < (CAPTURE_SECONDS * 1000 + CAPTURE_TIMEOUT_MSEC):
+	and Time.get_ticks_msec() - capture_launched_msec < _capture_budget_msec:
 		await tree.process_frame
 
 	var still_running:bool = _capture_pid >= 0 \
@@ -236,6 +244,8 @@ func post() -> Error:
 		_stop_capture()
 		return ERR_TIMEOUT
 
+	capture_ended_msec = Time.get_ticks_msec()
+	_remember_pad()
 	_capture_pid = -1
 	_restore_profiler()
 	var cropped:Error = _crop_trace()
@@ -243,6 +253,18 @@ func post() -> Error:
 		return cropped
 
 	return OK
+
+
+func _log_err(content:Variant) -> void:
+	Log.err(content, _test)
+
+
+func _log_wrn(content:Variant) -> void:
+	Log.wrn(content, _test)
+
+
+func _log_note(content:Variant) -> void:
+	Log.lvl(Log.Level.NOTICE, content, _test)
 
 
 ## Write [param text] into the open capture.
@@ -270,7 +292,7 @@ func _ensure_timer( scene_tree:SceneTree ) -> void:
 	# Find, or create our timer.
 	var old_timer:Node = scene_tree.root.find_child("TracyCaptureTimer", false)
 	if old_timer:
-		Log.wrn( "Timer was not removed in last run.")
+		_log_wrn( "Timer was not removed in last run.")
 		old_timer.queue_free()
 
 	timer = Timer.new()
@@ -388,7 +410,7 @@ func _stop_capture() -> void:
 	and OS.is_process_running(_capture_pid):
 		var killed:Error = OS.kill(_capture_pid)
 		if killed != OK:
-			Log.err("tracy-capture did not die")
+			_log_err("tracy-capture did not die")
 	_capture_pid = -1
 	_restore_profiler()
 
@@ -397,16 +419,16 @@ func _stop_capture() -> void:
 func _crop_trace() -> Error:
 	# Both scripts refuse an output path equal to the input, so the crop lands in temps first.
 	if _trace_path.is_empty() or not FileAccess.file_exists(_trace_path):
-		Log.err("tracy capture was not saved")
+		_log_err("tracy capture was not saved")
 		return ERR_FILE_NOT_FOUND
 	var python:String = _python_exe()
 	if python.is_empty():
 		# Trimming is optional. The raw capture is still a successful result.
-		Log.wrn("python was not found. Raw capture left at " + _trace_path)
+		_log_wrn("python was not found. Raw capture left at " + _trace_path)
 		return OK
 	var scripts:String = _tracy_script_dir()
 	if scripts.is_empty():
-		Log.wrn("tracy python scripts were not found. Set TRACY_SCRIPTS to that folder.")
+		_log_wrn("tracy python scripts were not found. Set TRACY_SCRIPTS to that folder.")
 		return ERR_FILE_NOT_FOUND
 
 	var trimmed:String = _trace_path + ".tail"
@@ -450,6 +472,69 @@ static func _python_exe() -> String:
 		if FileAccess.file_exists(candidate):
 			return candidate
 	return ""
+
+
+## [code]-s[/code] is the declared harness time plus the stored pad, in whole seconds.
+func _capture_window_sec() -> int:
+	var harness:float = 1.0
+	if _test != null:
+		harness = maxf(_test.harness_time_s, 0.0)
+	return maxi(1, ceili(harness + _pad_s()))
+
+
+## Stored pad. One second until a measured run replaces it.
+static func _pad_s() -> float:
+	var value:Variant = ProjectSettings.get_setting(_SETTINGS_PREFIX.path_join("tracy_pad_s"), 1.0)
+	if value is float or value is int:
+		return maxf(float(value), 0.0)
+	return 1.0
+
+
+static func _pad_samples() -> int:
+	var value:Variant = ProjectSettings.get_setting(_SETTINGS_PREFIX.path_join("tracy_pad_samples"), 0)
+	if value is int or value is float:
+		return maxi(int(value), 0)
+	return 0
+
+
+## Fold one measured pad into the setting. The mean keeps the last 32 samples.
+static func _store_pad(sample:float) -> void:
+	var n:int = _pad_samples()
+	var avg:float = _pad_s()
+	var next:float = maxf(sample, 0.0)
+	var next_n:int = 1
+	if n > 0:
+		var weight:int = mini(n, 31)
+		next = (avg * float(weight) + sample) / float(weight + 1)
+		next_n = mini(n + 1, 32)
+	ProjectSettings.set_setting(_SETTINGS_PREFIX.path_join("tracy_pad_s"), next)
+	ProjectSettings.set_setting(_SETTINGS_PREFIX.path_join("tracy_pad_samples"), next_n)
+	ProjectSettings.save()
+
+
+func _remember_pad() -> void:
+	if _test == null \
+	or capture_launched_msec <= 0 \
+	or capture_ended_msec <= 0:
+		return
+	if _test.setup_s < 0.0 \
+	or _test.run_s < 0.0 \
+	or _test.cleanup_s < 0.0:
+		_log_note("capture start=%d end=%d phases incomplete" % [
+			capture_launched_msec, capture_ended_msec,
+		])
+		return
+	var wall:float = (capture_ended_msec - capture_launched_msec) / 1000.0
+	var harness:float = _test.setup_s + _test.run_s + _test.cleanup_s
+	# Time from launch until setup. Folding wall-minus-harness would grow every run,
+	# because [code]-s[/code] holds the process open for the whole window.
+	var sample:float = 0.0
+	if _test.harness_mark_msec > capture_launched_msec:
+		sample = (_test.harness_mark_msec - capture_launched_msec) / 1000.0
+	_log_note("capture wall=%.3f harness=%.3f pad=%.3f start=%d end=%d" % [
+		wall, harness, sample, capture_launched_msec, capture_ended_msec,
+	])
+	_store_pad(sample)
 
 
 static func _setting_text(prop:StringName) -> String:
@@ -498,10 +583,10 @@ func _run_tracy_script(python:String, script:String, args:PackedStringArray) -> 
 			text += chunk
 	text = text.strip_edges()
 	if code != 0:
-		Log.wrn("tracy script failed (" + str(code) + ") " + script.get_file() + "\n" + text)
+		_log_wrn("tracy script failed (" + str(code) + ") " + script.get_file() + "\n" + text)
 		return ERR_SCRIPT_FAILED
 	if not text.is_empty():
-		Log.wrn(text)
+		_log_wrn(text)
 	return OK
 
 
@@ -512,25 +597,25 @@ func _install_cropped(tight:String) -> Error:
 	if FileAccess.file_exists(parked):
 		var cleared:Error = DirAccess.remove_absolute(parked)
 		if cleared != OK:
-			Log.wrn("could not clear " + parked)
+			_log_wrn("could not clear " + parked)
 			return cleared
 	var moved:Error = DirAccess.rename_absolute(_trace_path, parked)
 	if moved != OK:
-		Log.wrn("could not park the raw capture")
+		_log_wrn("could not park the raw capture")
 		return moved
 
 	var placed:Error = DirAccess.rename_absolute(tight, _trace_path)
 	if placed != OK:
 		var back:Error = DirAccess.rename_absolute(parked, _trace_path)
 		if back != OK:
-			Log.wrn("cropped trace is at " + tight + " and the raw capture is at " + parked)
+			_log_wrn("cropped trace is at " + tight + " and the raw capture is at " + parked)
 		else:
-			Log.wrn("could not install the cropped capture")
+			_log_wrn("could not install the cropped capture")
 		return placed
 
 	var dropped:Error = DirAccess.remove_absolute(parked)
 	if dropped != OK:
-		Log.wrn("cropped capture is in place. raw copy remains at " + parked)
+		_log_wrn("cropped capture is in place. raw copy remains at " + parked)
 	return OK
 
 
@@ -541,4 +626,4 @@ func _drop_file(path:String) -> void:
 		return
 	var removed:Error = DirAccess.remove_absolute(path)
 	if removed != OK:
-		Log.wrn("could not remove " + path)
+		_log_wrn("could not remove " + path)

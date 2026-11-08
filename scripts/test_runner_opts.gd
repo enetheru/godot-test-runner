@@ -49,3 +49,20 @@ const Log = preload( "../logging.gd" )
 			return
 		python_exe = value
 		emit_changed()
+
+## Seconds added to the declared harness time for the tracy-capture window.
+## A finished capture with setup, body, and cleanup replaces this with the measured mean.
+@export_range(0.0, 120.0, 0.01, "suffix:s") var tracy_pad_s:float = 1.0:
+	set(value):
+		if is_equal_approx(tracy_pad_s, value):
+			return
+		tracy_pad_s = value
+		emit_changed()
+
+## How many measured pads are folded into [member tracy_pad_s]. Caps at 32.
+@export var tracy_pad_samples:int = 0:
+	set(value):
+		if tracy_pad_samples == value:
+			return
+		tracy_pad_samples = value
+		emit_changed()

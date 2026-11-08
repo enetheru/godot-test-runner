@@ -176,6 +176,16 @@ class Bound extends RefCounted:
 				push_warning( msg )
 		else:
 			print_rich( msg )
+		_collect( object, msg )
+
+
+	## A test keeps its lines on [code]output[/code]. Other objects are left alone.
+	func _collect( object:Object, msg:String ) -> void:
+		if not is_instance_valid( object ):
+			return
+		var slot:Variant = object.get( &"output" )
+		if slot is Array:
+			slot.append( msg )
 
 
 	## Level already passed. Print [param text] as BBCode, with no object prefix.
