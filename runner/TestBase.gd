@@ -303,7 +303,7 @@ func _tracy_supported() -> bool:
 func _apply_opts() -> void:
 	if opts != null:
 		local_lvl = opts.lvl
-		_test_tracy = opts.tracy and _tracy_supported()
+		_test_tracy = opts.tracy and _tracy_supported() and TracyHooks.is_configured()
 
 
 # Assign [member scene_tree] from the editor base, or from the main loop.

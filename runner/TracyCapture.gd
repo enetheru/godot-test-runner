@@ -293,8 +293,15 @@ func _on_server_connected() -> void:
 	timer.timeout.emit()
 
 
+## Capture executable, Python, and both crop scripts all resolve to files.
+static func is_configured() -> bool:
+	return not _capture_exe().is_empty() \
+		and not _python_exe().is_empty() \
+		and not _tracy_script_dir().is_empty()
+
+
 ## First existing [code]tracy-capture[/code], or [code]TRACY_CAPTURE[/code] when that file exists.
-func _capture_exe() -> String:
+static func _capture_exe() -> String:
 	# A saved path is the one the dock was given. It does not fall through to the guess.
 	var configured:String = _setting_text(&"tracy_capture")
 	if not configured.is_empty():
@@ -428,7 +435,7 @@ func _crop_trace() -> Error:
 
 
 ## Saved [code]python.exe[/code], or [code]TRACY_PYTHON[/code] when that file exists.
-func _python_exe() -> String:
+static func _python_exe() -> String:
 	# [method OS.execute] starts the path itself. A bare [code]python[/code] on [code]PATH[/code] is not enough.
 	# A saved path is the one the dock was given. It does not fall through to the guess.
 	var configured:String = _setting_text(&"tracy_python")
@@ -445,7 +452,7 @@ func _python_exe() -> String:
 	return ""
 
 
-func _setting_text(prop:StringName) -> String:
+static func _setting_text(prop:StringName) -> String:
 	var value:Variant = ProjectSettings.get_setting(_SETTINGS_PREFIX.path_join(String(prop)), "")
 	if value is String:
 		return value
@@ -453,7 +460,7 @@ func _setting_text(prop:StringName) -> String:
 
 
 ## Folder that holds both crop scripts, or [code]TRACY_SCRIPTS[/code] when that folder has them.
-func _tracy_script_dir() -> String:
+static func _tracy_script_dir() -> String:
 	# trim_tracy_tail.py imports shift_tracy_start from this same folder.
 	var configured:String = _setting_text(&"tracy_scripts")
 	if not configured.is_empty():
@@ -470,7 +477,7 @@ func _tracy_script_dir() -> String:
 
 
 ## Both crop scripts are in [param folder].
-func _tracy_scripts_present(folder:String) -> bool:
+static func _tracy_scripts_present(folder:String) -> bool:
 	# An env override that names the wrong folder must miss, same as a missing install.
 	if folder.is_empty():
 		return false

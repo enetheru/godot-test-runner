@@ -466,12 +466,19 @@ func _apply_opts() -> void:
 		test_lvl = opts.lvl
 		test_tracy = opts.tracy
 	var supported:bool = _tracy_supported()
+	var ready:bool = supported and TracyCapture.is_configured()
 	if is_node_ready():
 		_sync_lvl_btn()
 		tracy_btn.visible = supported
-		tracy_btn.set_pressed_no_signal( test_tracy )
+		tracy_btn.disabled = not ready
+		if ready:
+			tracy_btn.tooltip_text = "Capture a Tracy trace for each run."
+			tracy_btn.set_pressed_no_signal( test_tracy )
+		else:
+			tracy_btn.tooltip_text = "Set the Tracy capture executable, Python, and crop scripts before this can be enabled."
+			tracy_btn.set_pressed_no_signal( false )
 	var installer:Callable = Callable()
-	if supported and test_tracy:
+	if ready and test_tracy:
 		installer = Callable(TracyCapture, &"install")
 	TestBase.prepare_run = installer
 	#PlayBase.prepare_run = installer
