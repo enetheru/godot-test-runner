@@ -146,37 +146,41 @@ class Bound extends RefCounted:
 
 
 	## Prints [param content]. The event bit chooses [method push_error],
-	## [method push_warning], or [method print].
+	## [method push_warning], or [method print]. Those engine sinks already
+	## stamp the level, so the body is sent bare. [method print] does not,
+	## and the stored line always carries one label. [param object] is the
+	## identity for collection and is not written into the line.
 	func _fallback_lvl( p_lvl:int, content:Variant, object:Object, _stack:Array ) -> void:
-		var msg:String = (str( object ) + " ") if is_instance_valid( object ) else ""
+		var body:String = ""
+		if content is Array:
+			var arr:Array = content
+			body = " ".join( arr.map( str ) )
+		elif content is Dictionary:
+			body = JSON.stringify( content, "  " )
+		else:
+			body = str( content )
 
+		var label:String = ""
 		if p_lvl < Level.DEFAULT:
 			var key:Variant = Level.find_key( p_lvl )
 			if key != null:
-				msg += str( key ) + ": "
-
-		if content is Array:
-			var arr:Array = content
-			msg += " ".join( arr.map( str ) )
-		elif content is Dictionary:
-			msg += JSON.stringify( content, "  " )
-		else:
-			msg += str(content)
+				label = str( key )
+		var labeled:String = body if label.is_empty() else ( label + ": " + body )
 
 		var bit:int = Shim.event_bit( p_lvl )
 		if bit & (Level.EXCLUSIVE_CRITICAL | Level.EXCLUSIVE_ERROR):
 			if Engine.is_editor_hint():
-				printerr( msg )
+				printerr( body )
 			else:
-				push_error( msg )
+				push_error( body )
 		elif bit & Level.EXCLUSIVE_WARNING:
 			if Engine.is_editor_hint():
-				print( msg )
+				print( labeled )
 			else:
-				push_warning( msg )
+				push_warning( body )
 		else:
-			print_rich( msg )
-		_collect( object, msg )
+			print_rich( body )
+		_collect( object, labeled )
 
 
 	## A test keeps its lines on [code]output[/code]. Other objects are left alone.
@@ -185,7 +189,8 @@ class Bound extends RefCounted:
 			return
 		var slot:Variant = object.get( &"output" )
 		if slot is Array:
-			slot.append( msg )
+			var lines:Array = slot
+			lines.append( msg )
 
 
 	## Level already passed. Print [param text] as BBCode, with no object prefix.

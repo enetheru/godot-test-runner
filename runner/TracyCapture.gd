@@ -152,12 +152,9 @@ func pre() -> Error:
 		return ERR_FILE_NOT_FOUND
 
 	var script_path:String = str(_test.get_script().resource_path)
-	_log_note("test script path: %s" % script_path)
-
 	var capture_file:String = script_path.get_basename() + ".tracy"
-	_log_note("test capture file: %s" % capture_file)
-
 	_trace_path = ProjectSettings.globalize_path(capture_file)
+	_log_note("script %s" % script_path)
 
 	_capture_connected = false
 	var window_sec:int = _capture_window_sec()
@@ -169,15 +166,16 @@ func pre() -> Error:
 		"-f",
 		"-s", str(window_sec),
 	])
-	_log_note("tracy-capture cmd: %s" % _capture_cmd)
+	Log.lvl(Log.Level.DEBUG, "tracy-capture " + " ".join(_capture_cmd), _test)
 	capture_launched_msec = Time.get_ticks_msec()
 	_capture_pid = OS.create_process(exe, _capture_cmd, false)
-	_log_note("tracy-capture pid: %d" % _capture_pid)
-
 	if _capture_pid < 0:
 		_restore_profiler()
 		_log_err("tracy-capture failed to start")
 		return ERR_CANT_CREATE
+	_log_note("capture %s pid=%d port=%d window=%ds" % [
+		capture_file, _capture_pid, Profiler.get_port(), window_sec,
+	])
 
 	# wait for connection using a timer, the connection signal handler will
 	# trigger this timers timeout. if there is time left on the clock it
@@ -520,9 +518,10 @@ func _remember_pad() -> void:
 	if _test.setup_s < 0.0 \
 	or _test.run_s < 0.0 \
 	or _test.cleanup_s < 0.0:
-		_log_note("capture start=%d end=%d phases incomplete" % [
+		_log_note("capture ended with phases incomplete")
+		Log.lvl(Log.Level.DEBUG, "capture start=%d end=%d" % [
 			capture_launched_msec, capture_ended_msec,
-		])
+		], _test)
 		return
 	var wall:float = (capture_ended_msec - capture_launched_msec) / 1000.0
 	var harness:float = _test.setup_s + _test.run_s + _test.cleanup_s
@@ -583,11 +582,36 @@ func _run_tracy_script(python:String, script:String, args:PackedStringArray) -> 
 			text += chunk
 	text = text.strip_edges()
 	if code != 0:
-		_log_wrn("tracy script failed (" + str(code) + ") " + script.get_file() + "\n" + text)
+		_log_wrn("tracy script failed (" + str(code) + ") " + script.get_file() + "\n" + _crop_note(text))
 		return ERR_SCRIPT_FAILED
 	if not text.is_empty():
-		_log_wrn(text)
+		_log_note(_crop_note(text))
 	return OK
+
+
+## Success text from a crop script. Drops the project root and keeps the file name.
+func _crop_note(text:String) -> String:
+	var root:String = ProjectSettings.globalize_path("res://").replace("\\", "/").trim_suffix("/")
+	var note:String = ""
+	for raw:String in text.split("\n"):
+		var line:String = raw.replace("\\", "/")
+		if not root.is_empty():
+			line = line.replace(root + "/", "")
+		if not note.is_empty():
+			note += "\n"
+		note += _wrote_file(line)
+	return note
+
+
+func _wrote_file(line:String) -> String:
+	var mark:String = "wrote "
+	if not line.begins_with(mark):
+		return line
+	var rest:String = line.substr(mark.length())
+	var colon:int = rest.find(": ")
+	if colon < 0:
+		return line
+	return mark + rest.substr(0, colon).get_file() + rest.substr(colon)
 
 
 ## Move [param tight] onto [member _trace_path].

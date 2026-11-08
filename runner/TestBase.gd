@@ -327,6 +327,7 @@ func run_harness() -> void:
 
 func _run_setup() -> void:
 	var t0:int = Time.get_ticks_msec()
+	@warning_ignore("redundant_await")
 	_setup_error = await _setup()
 	setup_s = (Time.get_ticks_msec() - t0) / 1000.0
 	_setup_done = true
@@ -337,6 +338,7 @@ func _run_setup() -> void:
 
 func _run_cleanup() -> void:
 	var t0:int = Time.get_ticks_msec()
+	@warning_ignore("redundant_await")
 	_cleanup_error = await _cleanup()
 	cleanup_s = (Time.get_ticks_msec() - t0) / 1000.0
 	_cleanup_done = true
@@ -371,10 +373,16 @@ func _finish_hooks() -> void:
 
 
 func _log_phases() -> void:
-	var line:String = "phases setup=%.3f run=%.3f cleanup=%.3f" % [
-		setup_s, run_s, cleanup_s,
+	var line:String = "phases setup=%s run=%s cleanup=%s" % [
+		_phase_label(setup_s), _phase_label(run_s), _phase_label(cleanup_s),
 	]
 	Log.lvl(Log.Level.NOTICE, line, self)
+
+
+func _phase_label(seconds:float) -> String:
+	if seconds < 0.0:
+		return "skipped"
+	return "%.3fs" % seconds
 
 
 ## This binary registered the Profiler singleton. Stock Godot has no such name.
