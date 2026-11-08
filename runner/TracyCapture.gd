@@ -438,7 +438,7 @@ func _crop_trace() -> Error:
 static func _python_exe() -> String:
 	# [method OS.execute] starts the path itself. A bare [code]python[/code] on [code]PATH[/code] is not enough.
 	# A saved path is the one the dock was given. It does not fall through to the guess.
-	var configured:String = _setting_text(&"tracy_python")
+	var configured:String = _setting_text(&"python_exe")
 	if not configured.is_empty():
 		if FileAccess.file_exists(configured):
 			return configured

@@ -43,9 +43,9 @@ const Log = preload( "../logging.gd" )
 		emit_changed()
 
 ## Path to python.exe. Empty falls back to TRACY_PYTHON, then the built-in candidate.
-@export_global_file("*.exe") var tracy_python:String = "":
+@export_global_file("*.exe") var python_exe:String = "":
 	set(value):
-		if tracy_python == value:
+		if python_exe == value:
 			return
-		tracy_python = value
+		python_exe = value
 		emit_changed()
