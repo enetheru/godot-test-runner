@@ -18,13 +18,9 @@ Matches row names, and it ignores case. A word matches anywhere in the name. `*`
 
 The middle of the bar counts folders, results, failures, and passes.
 
-## Tracy
-
-Captures a trace for each run. The switch shows up once this editor has the profiler and the capture tools are set.
-
 ## Level
 
-Sets how much a run prints, from Silent through Trace. A failure's log is in its result box. A pass includes its log when the level includes Info.
+A failure's log is in its result box. A pass includes its log when the level includes Info.
 
 ## Clear Results
 
@@ -32,7 +28,7 @@ Clears the result boxes and the row status.
 
 ## Options
 
-Opens the options resource in the Inspector.
+Opens the options resource in the Inspector. Level lists every ceiling, from Silent through Trace. Tracy and its pad stay off until the capture executable, Python, and crop scripts are set.
 
 ## Rows
 

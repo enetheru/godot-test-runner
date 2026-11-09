@@ -9,6 +9,7 @@ const CaseMenu = preload( "case/menu.gd" )
 ## Plugin Settings
 const SettingsScript = preload( "scripts/settings.gd" )
 const OptsScript = preload( "scripts/test_runner_opts.gd" )
+const OptsInspector = preload( "scripts/opts_inspector.gd" )
 const SETTINGS_PREFIX:String = OptsScript.PREFIX
 
 ## ExportPlugin
@@ -54,6 +55,8 @@ var _filesystem_menu:CaseMenu
 
 var _script_menu:CaseMenu
 
+var _opts_inspector:EditorInspectorPlugin
+
 
 #             ███████ ██    ██ ███████ ███    ██ ████████ ███████              #
 #             ██      ██    ██ ██      ████   ██    ██    ██                   #
@@ -84,6 +87,9 @@ func _init() -> void:
 
 
 func _enter_tree() -> void:
+	_opts_inspector = OptsInspector.new()
+	add_inspector_plugin( _opts_inspector )
+
 	_export_plugin = _ExportPlugin.new()
 	add_export_plugin( _export_plugin )
 
@@ -111,6 +117,9 @@ func _enter_tree() -> void:
 
 
 func _exit_tree() -> void:
+	if _opts_inspector != null:
+		remove_inspector_plugin( _opts_inspector )
+		_opts_inspector = null
 	_remove_case_menus()
 	if _export_plugin:
 		remove_export_plugin( _export_plugin )

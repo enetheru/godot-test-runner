@@ -58,8 +58,6 @@ func                        ________PROPERTIES_______              ()->void:pass
 # Top Row Center
 @onready var stats_counter: RichTextLabel = $Buttons/Center/StatsCounter
 # Top Row Right
-@onready var tracy_btn: CheckButton = $Buttons/Right/Tracy
-@onready var lvl_btn: OptionButton = $Buttons/Right/Level
 @onready var clear_btn: Button = $Buttons/Right/ClearResults
 @onready var help_btn: Button = $Buttons/Right/Help
 
@@ -164,16 +162,6 @@ func _on_options_pressed() -> void:
 
 	var target:Resource = opts if opts != null else OptsScript.shared()
 	EditorInterface.inspect_object( target )
-
-
-func _on_tracy_toggled(toggled_on: bool) -> void:
-	_store_flag( &"tracy", toggled_on )
-
-
-func _on_lvl_selected( index:int ) -> void:
-	if index < 0 or index >= Log.CEILINGS.size():
-		return
-	_store_flag( &"lvl", Log.CEILINGS[index] )
 
 
 func _on_opts_changed() -> void:
@@ -512,7 +500,7 @@ func run_case( script:GDScript, result:TestResult ) -> void:
 	_apply_opts()
 	var session := CaseSession.new()
 	session.host = CaseSession.Host.EDITOR if Engine.is_editor_hint() else CaseSession.Host.PLAY
-	# The button forces a capture. Off leaves the saved Tracy flag in charge.
+	# The options flag requests a capture. Off leaves the run untraced.
 	if test_tracy:
 		session.capture_request = 1
 	var scene_tree:SceneTree = get_tree()
@@ -594,25 +582,14 @@ func _tracy_supported() -> bool:
 	return Engine.has_singleton(&'Profiler')
 
 
-## Copy [member opts] onto the buttons, the service, and the Tracy hook.
+## Copy [member opts] onto the service and the Tracy hook.
 func _apply_opts() -> void:
 	test_path = OptsScript.tests_root()
 	case_path = OptsScript.cases_root()
 	if opts != null:
 		test_lvl = opts.lvl
 		test_tracy = opts.tracy
-	var supported:bool = _tracy_supported()
-	var capture_ready:bool = supported and TracyCapture.is_configured()
-	if is_node_ready():
-		_sync_lvl_btn()
-		tracy_btn.visible = supported
-		tracy_btn.disabled = not capture_ready
-		if capture_ready:
-			tracy_btn.tooltip_text = "Capture a Tracy trace for each run."
-			tracy_btn.set_pressed_no_signal( test_tracy )
-		else:
-			tracy_btn.tooltip_text = "Set the Tracy capture executable, Python, and crop scripts before this can be enabled."
-			tracy_btn.set_pressed_no_signal( false )
+	var capture_ready:bool = _tracy_supported() and TracyCapture.is_configured()
 	var installer:Callable = Callable()
 	if capture_ready and test_tracy:
 		installer = Callable(TracyCapture, &"install")
@@ -620,22 +597,6 @@ func _apply_opts() -> void:
 	if is_instance_valid( _service ) \
 	and _service.has_method( &"set_lvl" ):
 		_service.call( &"set_lvl", test_lvl )
-
-
-## Show [member test_lvl] on the level button. Signals stay blocked.
-func _sync_lvl_btn() -> void:
-	if not is_instance_valid( lvl_btn ):
-		return
-	lvl_btn.set_block_signals( true )
-	if lvl_btn.item_count != Log.CEILINGS.size():
-		lvl_btn.clear()
-		for mask:int in Log.CEILINGS:
-			lvl_btn.add_item( Log.level_label( mask ) )
-	var idx:int = Log.CEILINGS.find( test_lvl )
-	if idx < 0:
-		idx = 0
-	lvl_btn.select( idx )
-	lvl_btn.set_block_signals( false )
 
 
 func _load_help() -> String:
