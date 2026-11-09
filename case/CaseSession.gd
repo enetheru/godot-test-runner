@@ -212,11 +212,10 @@ func run_await( case: Case ) -> void:
 
 	harness_mark_msec = Time.get_ticks_msec()
 	_arm()
-	# The override may await. The base method does not, so this looks redundant.
-	var setup_t: int = Time.get_ticks_msec()
-	@warning_ignore( "redundant_await" )
-	var setup_err: Error = await case._setup()
-	setup_s = _elapsed( setup_t )
+	# Timed in _timed. A stamp kept in this function is an Object after the next await.
+	var setup_pack: Array = await _timed( case._setup )
+	setup_s = setup_pack[0]
+	var setup_err: Error = setup_pack[1]
 	if status == "timeout":
 		await _finish_await()
 		return
@@ -227,10 +226,9 @@ func run_await( case: Case ) -> void:
 		return
 
 	runcode = TEST_OK
-	var body_t: int = Time.get_ticks_msec()
-	@warning_ignore( "redundant_await" )
-	var returned: int = await case._run_test()
-	run_s = _elapsed( body_t )
+	var body_pack: Array = await _timed( case._run_test )
+	run_s = body_pack[0]
+	var returned: int = body_pack[1]
 	if status == "timeout":
 		await _finish_await()
 		return
@@ -238,10 +236,9 @@ func run_await( case: Case ) -> void:
 		runcode = returned
 	status = "pass" if runcode == TEST_OK else "fail"
 
-	var cleanup_t: int = Time.get_ticks_msec()
-	@warning_ignore( "redundant_await" )
-	var cleanup_err: Error = await case._cleanup()
-	cleanup_s = _elapsed( cleanup_t )
+	var cleanup_pack: Array = await _timed( case._cleanup )
+	cleanup_s = cleanup_pack[0]
+	var cleanup_err: Error = cleanup_pack[1]
 	if status != "timeout" and cleanup_err != OK and status == "pass":
 		status = "cleanup failed"
 		runcode = TEST_FAILED
@@ -328,6 +325,14 @@ func _install_tracy() -> void:
 
 func _elapsed( started: int ) -> float:
 	return ( Time.get_ticks_msec() - started ) / 1000.0
+
+
+# One await, then the length. run_await cannot hold the stamp itself.
+func _timed( work: Callable ) -> Array:
+	var started := Time.get_ticks_msec()
+	@warning_ignore( "redundant_await" )
+	var result: Variant = await work.call()
+	return [ _elapsed( started ), result ]
 
 
 func _pre_sync() -> bool:
@@ -485,11 +490,11 @@ static func is_case_script( scr: Script ) -> bool:
 	return false
 
 
-## [param path] loads as a case script.
-static func is_case_path( path: String ) -> bool:
-	if not path.ends_with( ".gd" ) or not ResourceLoader.exists( path ):
+## [param script_path] loads as a case script.
+static func is_case_path( script_path: String ) -> bool:
+	if not script_path.ends_with( ".gd" ) or not ResourceLoader.exists( script_path ):
 		return false
-	var loaded: Resource = load( path )
+	var loaded: Resource = load( script_path )
 	if not loaded is Script:
 		return false
 	var scr: Script = loaded
