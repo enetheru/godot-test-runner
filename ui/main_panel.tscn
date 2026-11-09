@@ -2,7 +2,6 @@
 
 [ext_resource type="Script" uid="uid://d2kuss1cr4mg" path="res://addons/enetheru.test-runner/ui/main_panel.gd" id="1_alnk0"]
 [ext_resource type="Texture2D" uid="uid://c3w4bod4en2gx" path="res://addons/enetheru.test-runner/res/run-all.svg" id="2_73jry"]
-[ext_resource type="Texture2D" uid="uid://ixnh31np28ok" path="res://addons/enetheru.test-runner/res/filter-cog.svg" id="4_ub16m"]
 [ext_resource type="Texture2D" uid="uid://c5mjw61j4wra4" path="res://addons/enetheru.test-runner/res/folder-sync.svg" id="5_k3utk"]
 [ext_resource type="Texture2D" uid="uid://clvd7lgq1sdn3" path="res://addons/enetheru.test-runner/res/trash-can.svg" id="6_blb3b"]
 [ext_resource type="Texture2D" uid="uid://dngr7cckmvug" path="res://addons/enetheru.test-runner/res/circle-question.svg" id="7_5fedl"]
@@ -46,11 +45,6 @@ theme_override_constants/icon_max_width = 24
 text = "Reload Tests
 "
 icon = ExtResource("5_k3utk")
-
-[node name="Filters" type="Button" parent="Buttons/Left" unique_id=395048789]
-layout_mode = 2
-text = "Filters"
-icon = ExtResource("4_ub16m")
 
 [node name="Center" type="HBoxContainer" parent="Buttons" unique_id=39480746]
 layout_mode = 2
@@ -117,11 +111,32 @@ layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
-[node name="TestsTree" type="Tree" parent="TestOutput" unique_id=111155159]
+[node name="TestList" type="VBoxContainer" parent="TestOutput"]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 size_flags_stretch_ratio = 0.5
+
+[node name="FilterRow" type="HBoxContainer" parent="TestOutput/TestList"]
+layout_mode = 2
+size_flags_horizontal = 3
+alignment = 1
+
+[node name="FilterLabel" type="Label" parent="TestOutput/TestList/FilterRow"]
+layout_mode = 2
+text = "Filter"
+
+[node name="Filter" type="LineEdit" parent="TestOutput/TestList/FilterRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "*glob*"
+tooltip_text = "Glob on the row name. * and ? are wildcards. Other text matches anywhere in the name."
+clear_button_enabled = true
+
+[node name="TestsTree" type="Tree" parent="TestOutput/TestList" unique_id=111155159]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
 theme_override_constants/outline_size = 4
 theme_override_constants/draw_guides = 4
 theme_override_constants/draw_relationship_lines = 4
@@ -176,11 +191,11 @@ autowrap_mode = 0
 
 [connection signal="pressed" from="Buttons/Left/Run" to="." method="_on_run_pressed"]
 [connection signal="pressed" from="Buttons/Left/Reload" to="." method="_on_reload_pressed"]
-[connection signal="pressed" from="Buttons/Left/Filters" to="." method="_on_filters_pressed"]
+[connection signal="text_changed" from="TestOutput/TestList/FilterRow/Filter" to="." method="_on_filter_text_changed"]
 [connection signal="toggled" from="Buttons/Right/Tracy" to="." method="_on_tracy_toggled"]
 [connection signal="item_selected" from="Buttons/Right/Level" to="." method="_on_lvl_selected"]
 [connection signal="pressed" from="Buttons/Right/ClearResults" to="." method="_on_clear_results_pressed"]
 [connection signal="pressed" from="Buttons/Right/Help" to="PopupPanel" method="popup"]
-[connection signal="button_clicked" from="TestOutput/TestsTree" to="." method="_on_tests_tree_button_clicked"]
-[connection signal="gui_input" from="TestOutput/TestsTree" to="." method="_on_tests_tree_gui_input"]
-[connection signal="multi_selected" from="TestOutput/TestsTree" to="." method="_on_tests_tree_multi_selected"]
+[connection signal="button_clicked" from="TestOutput/TestList/TestsTree" to="." method="_on_tests_tree_button_clicked"]
+[connection signal="gui_input" from="TestOutput/TestList/TestsTree" to="." method="_on_tests_tree_gui_input"]
+[connection signal="multi_selected" from="TestOutput/TestList/TestsTree" to="." method="_on_tests_tree_multi_selected"]

@@ -52,7 +52,6 @@ func                        ________PROPERTIES_______              ()->void:pass
 # Top Row Left
 @onready var run_btn: Button = $Buttons/Left/Run
 @onready var reload_btn: Button = $Buttons/Left/Reload
-@onready var filters_btn: Button = $Buttons/Left/Filters
 
 # Top Row Center
 @onready var stats_counter: RichTextLabel = $Buttons/Center/StatsCounter
@@ -66,7 +65,8 @@ func                        ________PROPERTIES_______              ()->void:pass
 @onready var help_popup: PopupPanel = $PopupPanel
 
 # tree control
-@onready var tests_tree: Tree = $TestOutput/TestsTree
+@onready var list_filter: LineEdit = $TestOutput/TestList/FilterRow/Filter
+@onready var tests_tree: Tree = $TestOutput/TestList/TestsTree
 @onready var info_list: VBoxContainer = $TestOutput/InfoList
 @onready var info_scroller: ScrollContainer = $TestOutput/InfoList/ScrollContainer
 @onready var info_items: VBoxContainer = $TestOutput/InfoList/ScrollContainer/InfoItems
@@ -119,8 +119,8 @@ func _on_reload_pressed() -> void:
 	# TODO, reload tests should have some effect on the results list
 
 
-func _on_filters_pressed() -> void:
-	pass # Replace with function body.
+func _on_filter_text_changed( new_text:String ) -> void:
+	_apply_list_filter( new_text )
 
 
 func _on_tracy_toggled(toggled_on: bool) -> void:
@@ -603,6 +603,8 @@ func _is_file_item( item:TreeItem ) -> bool:
 
 func _file_items_under( item:TreeItem ) -> Array[TreeItem]:
 	var out:Array[TreeItem] = []
+	if item == null or not item.visible:
+		return out
 	if _is_file_item( item ):
 		out.append( item )
 	for child:TreeItem in item.get_children():
@@ -662,6 +664,7 @@ func regenerate_tree() -> void:
 		_add_folder_branch( test_def, root_item )
 
 	update_stats()
+	_apply_list_filter( list_filter.text if list_filter != null else "" )
 
 
 func update_tree_item(
@@ -702,3 +705,65 @@ func _add_folder_contents( test_def:TestDef, parent_item:TreeItem ) -> void:
 			_add_folder_branch( child_def, parent_item )
 	for file:String in test_def.test_scripts:
 		add_action_row( test_def, file, parent_item )
+
+
+func _apply_list_filter( pattern:String ) -> void:
+	if tests_tree == null:
+		return
+	var root:TreeItem = tests_tree.get_root()
+	if root == null:
+		return
+	if _filter_item( root, _list_glob( pattern ) ):
+		return
+
+
+## A bare word matches anywhere in the name. * and ? stay as written.
+func _list_glob( needle:String ) -> String:
+	var text:String = needle.strip_edges()
+	if text.is_empty():
+		return ""
+	if text.contains( "*" ) or text.contains( "?" ):
+		return text
+	return "*%s*" % text
+
+
+## Returns true when this row stays on screen.
+func _filter_item( item:TreeItem, glob:String ) -> bool:
+	if item == tests_tree.get_root():
+		var any_child:bool = false
+		for child:TreeItem in item.get_children():
+			any_child = _filter_item( child, glob ) or any_child
+		item.visible = true
+		return any_child
+	if glob.is_empty():
+		_set_all_visible( item )
+		return true
+	if not _is_file_item( item ) and item.get_text( 0 ).matchn( glob ):
+		item.visible = true
+		item.collapsed = false
+		for child:TreeItem in item.get_children():
+			_show_branch( child )
+		return true
+
+	var child_hit:bool = false
+	for child:TreeItem in item.get_children():
+		child_hit = _filter_item( child, glob ) or child_hit
+	var keep:bool = child_hit or item.get_text( 0 ).matchn( glob )
+	item.visible = keep
+	if keep and item.get_child_count() > 0:
+		item.collapsed = false
+	return keep
+
+
+func _set_all_visible( item:TreeItem ) -> void:
+	item.visible = true
+	for child:TreeItem in item.get_children():
+		_set_all_visible( child )
+
+
+func _show_branch( item:TreeItem ) -> void:
+	item.visible = true
+	if item.get_child_count() > 0:
+		item.collapsed = false
+	for child:TreeItem in item.get_children():
+		_show_branch( child )
