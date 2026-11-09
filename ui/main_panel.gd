@@ -89,7 +89,8 @@ var opts:OptsScript
 var _service:Node = null
 
 # Configuration
-var test_path:String = 'res://tests'
+var test_path:String = OptsScript.DEFAULT_TESTS_DIR
+var case_path:String = OptsScript.DEFAULT_CASES_DIR
 
 var test_script_filter:Callable = default_script_filter
 
@@ -138,7 +139,16 @@ func _on_lvl_selected( index:int ) -> void:
 
 
 func _on_opts_changed() -> void:
+	var prev_tests:String = test_path
+	var prev_cases:String = case_path
 	_apply_opts()
+	if not is_node_ready():
+		return
+	if prev_tests == test_path and prev_cases == case_path:
+		return
+	if is_instance_valid( _service ) and _service.has_method( &"reload" ):
+		_service.call( &"reload" )
+	regenerate_tree()
 
 
 func _on_clear_results_pressed() -> void:
@@ -244,6 +254,9 @@ func collect_tests( _path:String ) -> Array[TestDef]:
 	var tests:Array[TestDef] = []
 	for node:Dictionary in tree:
 		tests.append( _test_def_from_node( node ) )
+	var cases_branch:TestDef = _cases_branch()
+	if cases_branch != null:
+		tests.append( cases_branch )
 	return tests
 
 
@@ -329,8 +342,10 @@ func process_test( file_item:TreeItem ) -> void:
 	# 	1. Headless as EditorScript
 	# 	2. From the test runner as EditorScript
 	# 	3. In a game from the test runner as Node
-	# If the last, the script header needs to be re-written to extend Node
-	if not Engine.is_editor_hint():
+	# If the last, the script header needs to be re-written to extend Node.
+	# A case keeps its script. The session is the host.
+	var case_run:bool = CaseSession.is_case_path( script_path )
+	if not case_run and not Engine.is_editor_hint():
 		script_path = re_write(script_path)
 		# If Script path fails
 		if script_path.is_empty():
@@ -343,8 +358,10 @@ func process_test( file_item:TreeItem ) -> void:
 
 	# Load up the script and run the test
 	var script:GDScript = load( script_path )
-	if not script.can_instantiate():
+	if script == null or not script.can_instantiate():
 		result.output = ["Cannot instantiate '%s'" % script_path ]
+	elif case_run:
+		await run_case( script, result )
 	elif Engine.is_editor_hint():
 		var instance:TestBase  = script.new()
 		if instance:await run_test_base( instance, result )
@@ -356,7 +373,7 @@ func process_test( file_item:TreeItem ) -> void:
 		#instance.queue_free()
 
 	#Erase our alternate script file after we are done.
-	if not Engine.is_editor_hint():
+	if not case_run and not Engine.is_editor_hint():
 		var err:Error = DirAccess.remove_absolute(script_path)
 		if err != OK:
 			var msg:String = error_string(err) + ": Failure to remove alternate script"
@@ -388,6 +405,32 @@ func run_test_base( instance:TestBase, result:TestResult ) -> void:
 	await instance.run_harness()
 	result.retcode = instance.runcode as RetCode
 	result.output = instance.output
+
+
+## Editor host while this dock is in the editor. Play host while a game is running.
+func run_case( script:GDScript, result:TestResult ) -> void:
+	_apply_opts()
+	var session := CaseSession.new()
+	session.host = CaseSession.Host.EDITOR if Engine.is_editor_hint() else CaseSession.Host.PLAY
+	# The button forces a capture. Off leaves the saved Tracy flag in charge.
+	if test_tracy:
+		session.capture_request = 1
+	var scene_tree:SceneTree = get_tree()
+	if scene_tree == null:
+		result.retcode = RetCode.TEST_FAILED
+		result.output = ["No SceneTree for case"]
+		return
+	session.attach_tree( scene_tree )
+	var body:Case = session.instantiate( script )
+	if body == null:
+		result.retcode = RetCode.TEST_FAILED
+		result.output = ["Not a case"]
+		return
+	await session.run_await( body )
+	result.retcode = session.runcode as RetCode
+	result.output = []
+	for row:String in session.line().split( "\n" ):
+		result.output.append( row )
 
 
 #func run_play_base( instance:PlayBase, result:TestResult ) -> void:
@@ -462,23 +505,25 @@ func _tracy_supported() -> bool:
 
 ## Copy [member opts] onto the buttons, the service, and the Tracy hook.
 func _apply_opts() -> void:
+	test_path = OptsScript.tests_root()
+	case_path = OptsScript.cases_root()
 	if opts != null:
 		test_lvl = opts.lvl
 		test_tracy = opts.tracy
 	var supported:bool = _tracy_supported()
-	var ready:bool = supported and TracyCapture.is_configured()
+	var capture_ready:bool = supported and TracyCapture.is_configured()
 	if is_node_ready():
 		_sync_lvl_btn()
 		tracy_btn.visible = supported
-		tracy_btn.disabled = not ready
-		if ready:
+		tracy_btn.disabled = not capture_ready
+		if capture_ready:
 			tracy_btn.tooltip_text = "Capture a Tracy trace for each run."
 			tracy_btn.set_pressed_no_signal( test_tracy )
 		else:
 			tracy_btn.tooltip_text = "Set the Tracy capture executable, Python, and crop scripts before this can be enabled."
 			tracy_btn.set_pressed_no_signal( false )
 	var installer:Callable = Callable()
-	if ready and test_tracy:
+	if capture_ready and test_tracy:
 		installer = Callable(TracyCapture, &"install")
 	TestBase.prepare_run = installer
 	#PlayBase.prepare_run = installer
@@ -503,17 +548,58 @@ func _sync_lvl_btn() -> void:
 	lvl_btn.set_block_signals( false )
 
 
-## Write one flag through [member opts] into ProjectSettings.
+## Write one flag on [member opts]. The settings helper stores it.
 func _store_flag( prop:StringName, value:Variant ) -> void:
 	if opts != null \
 	and opts.get( prop ) != value:
 		opts.set( prop, value )
-		var full_path:String = OptsScript.PREFIX.path_join( String( prop ) )
-		ProjectSettings.set_setting( full_path, value )
-		var saved:Error = ProjectSettings.save()
-		if saved != OK:
-			push_warning( "TestRunner: ProjectSettings.save failed (%s)" % error_string( saved ) )
 	_apply_opts()
+
+
+func _case_root() -> String:
+	var root_v:Variant = case_path
+	if root_v is String:
+		var text:String = root_v
+		if not text.is_empty():
+			return text
+	case_path = OptsScript.cases_root()
+	return case_path
+
+
+func _cases_branch() -> TestDef:
+	var root:String = _case_root()
+	var branch:TestDef = TestDef.new()
+	branch.name = "Cases"
+	branch.folder_path = root
+	branch.test_scripts = CaseSession.case_files( root )
+	var tree:Array[Dictionary] = Shared.collect_test_tree(
+			root, max_scan_depth, _gd_file_filter )
+	for node:Dictionary in tree:
+		var child:TestDef = _prune_case_def( _test_def_from_node( node ) )
+		if child != null:
+			branch.children.append( child )
+	if branch.test_scripts.is_empty() and branch.children.is_empty():
+		return null
+	return branch
+
+
+func _prune_case_def( def:TestDef ) -> TestDef:
+	def.test_scripts = CaseSession.case_files( def.folder_path )
+	var kept:Array = []
+	for child_v:Variant in def.children:
+		if child_v is TestDef:
+			var child:TestDef = child_v
+			var pruned:TestDef = _prune_case_def( child )
+			if pruned != null:
+				kept.append( pruned )
+	def.children = kept
+	if def.test_scripts.is_empty() and def.children.is_empty():
+		return null
+	return def
+
+
+func _gd_file_filter( filename:String ) -> bool:
+	return filename.ends_with( ".gd" )
 
 
 func _test_def_from_node( node:Dictionary ) -> TestDef:

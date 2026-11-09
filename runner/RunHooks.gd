@@ -5,8 +5,8 @@ extends RefCounted
 
 ## Work around one test run.
 ##
-## [TestBase] awaits [method pre] and [method post]. It does not name the
-## subclass methods. Null on the test skips the hooks. [method message] is a
+## [TestBase] and [CaseSession] await [method pre] and [method post]. They do
+## not name the subclass methods. Null skips the hooks. [method message] is a
 ## timeline mark and does nothing until a subclass writes it.
 
 

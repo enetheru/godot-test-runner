@@ -174,10 +174,8 @@ class Bound extends RefCounted:
 			else:
 				push_error( body )
 		elif bit & Level.EXCLUSIVE_WARNING:
-			if Engine.is_editor_hint():
-				print( labeled )
-			else:
-				push_warning( body )
+			# [method print] leaves the WARNING label in the default text colour.
+			push_warning( body )
 		else:
 			print_rich( body )
 		_collect( object, labeled )

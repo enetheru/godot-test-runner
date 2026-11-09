@@ -4,6 +4,7 @@ extends EditorPlugin
 const MainPanel = preload( "ui/main_panel.tscn" )
 
 const ServiceScript = preload( "scripts/test_runner_service.gd" )
+const CaseMenu = preload( "case/menu.gd" )
 
 ## Plugin Settings
 const SettingsScript = preload( "scripts/settings.gd" )
@@ -49,6 +50,10 @@ var _cs_reloaded_cb:Callable = Callable()
 
 var _cs_pause_warned:bool = false
 
+var _filesystem_menu:CaseMenu
+
+var _script_menu:CaseMenu
+
 
 #             ███████ ██    ██ ███████ ███    ██ ████████ ███████              #
 #             ██      ██    ██ ██      ████   ██    ██    ██                   #
@@ -74,13 +79,7 @@ func _on_test_running( running:bool ) -> void:
 func                        ________OVERRIDES________              ()->void:pass
 
 func _init() -> void:
-	var opts_path:String = str(get_script().resource_path).get_base_dir().path_join( "res/opts.tres" )
-	var loaded:Resource = load( opts_path )
-	if loaded is OptsScript:
-		opts = loaded
-	else:
-		opts = OptsScript.new()
-		push_error( "TestRunner opts missing: " + opts_path )
+	opts = OptsScript.shared()
 	settings_hlp = SettingsScript.new( opts, SETTINGS_PREFIX )
 
 
@@ -105,9 +104,14 @@ func _enter_tree() -> void:
 	# launch, so an export or a normal editor session does not take this path.
 	if OS.get_environment( "GDFB_HEADLESS_TESTS" ) == "1":
 		call_deferred( &"_arm_headless_tests" )
+	_add_case_menus()
+	var proof := OS.get_environment( "CASE_PROOF" )
+	if proof != "":
+		call_deferred( &"_run_case_proof", proof )
 
 
 func _exit_tree() -> void:
+	_remove_case_menus()
 	if _export_plugin:
 		remove_export_plugin( _export_plugin )
 		_export_plugin = null
@@ -148,6 +152,32 @@ func get_test_runner_service() -> Node:
 	return service
 
 
+func _add_case_menus() -> void:
+	_filesystem_menu = CaseMenu.new()
+	_filesystem_menu.slot = EditorContextMenuPlugin.CONTEXT_SLOT_FILESYSTEM
+	add_context_menu_plugin( EditorContextMenuPlugin.CONTEXT_SLOT_FILESYSTEM, _filesystem_menu )
+
+	_script_menu = CaseMenu.new()
+	_script_menu.slot = EditorContextMenuPlugin.CONTEXT_SLOT_SCRIPT_EDITOR
+	add_context_menu_plugin( EditorContextMenuPlugin.CONTEXT_SLOT_SCRIPT_EDITOR, _script_menu )
+
+
+func _remove_case_menus() -> void:
+	if _filesystem_menu != null:
+		remove_context_menu_plugin( _filesystem_menu )
+		_filesystem_menu = null
+	if _script_menu != null:
+		remove_context_menu_plugin( _script_menu )
+		_script_menu = null
+
+
+## Headless stand-in for the FileSystem "Run Case With" item.
+## Set CASE_PROOF to a case path. A normal editor session leaves it unset.
+func _run_case_proof( path: String ) -> void:
+	await _filesystem_menu.run_path( path )
+	EditorInterface.get_base_control().get_tree().quit()
+
+
 #       ██ ███    ██ ████████ ███████ ██████  ███    ██  █████  ██             #
 #       ██ ████   ██    ██    ██      ██   ██ ████   ██ ██   ██ ██             #
 #       ██ ██ ██  ██    ██    █████   ██████  ██ ██  ██ ███████ ██             #
@@ -180,7 +210,7 @@ func _begin_headless_tests() -> void:
 		push_error( "GDFB_HEADLESS_TESTS: TestRunnerService is missing" )
 		get_tree().quit( 1 )
 		return
-	print( "GDFB_HEADLESS_TESTS: running res://tests" )
+	print( "GDFB_HEADLESS_TESTS: running %s" % OptsScript.tests_root() )
 	var resolved:Dictionary = service.call( &"resolve_targets", "all" )
 	var err := str( resolved.get( &"error", "" ) )
 	if not err.is_empty():

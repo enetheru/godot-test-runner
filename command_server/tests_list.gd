@@ -9,7 +9,7 @@ func get_command_name() -> String:
 
 
 func get_description() -> String:
-	return "List TestRunner groups and scripts under res://tests."
+	return "List TestRunner groups and scripts under the configured tests and cases folders."
 
 
 func get_usage() -> String:

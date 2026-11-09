@@ -18,7 +18,7 @@ func get_command_name() -> String:
 
 
 func get_description() -> String:
-	return "Confirm-and-run tests (all | group:Name | path | file) [level=<notice|info|debug|trace>] [parallel] [tracy]."
+	return "Confirm-and-run tests or case scripts (all | group:Name | path | file) [level=<notice|info|debug|trace>] [parallel] [tracy]."
 
 
 func get_usage() -> String:

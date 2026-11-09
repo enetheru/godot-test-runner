@@ -9,7 +9,7 @@ func get_command_name() -> String:
 
 
 func get_description() -> String:
-	return "Rescan res://tests and refresh TestRunner discovery."
+	return "Rescan the configured tests and cases folders and refresh TestRunner discovery."
 
 
 func get_usage() -> String:
