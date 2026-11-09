@@ -11,6 +11,7 @@ const InfoBox = preload('info_box.gd')
 const Shared = preload('../scripts/shared.gd')
 const OptsScript = preload( "../scripts/test_runner_opts.gd" )
 const Log = preload('../logging.gd')
+const CaseMenu = preload('../case/menu.gd')
 
 # Classes
 const TestDef = Shared.TestDef
@@ -88,6 +89,10 @@ var opts:OptsScript
 
 ## Optional headless service (Command Server). UI still owns Tree/InfoBoxes.
 var _service:Node = null
+
+## Same Run Case With menu as the FileSystem dock. Built on the first right-click.
+var _run_menu: CaseMenu
+var _case_popup: PopupMenu
 
 # Configuration
 var test_path:String = OptsScript.DEFAULT_TESTS_DIR
@@ -198,9 +203,17 @@ func _on_tests_tree_gui_input(event: InputEvent) -> void:
 	if not event is InputEventMouseButton: return
 	var mb_event:InputEventMouseButton = event
 	if not mb_event.pressed: return
-	#var column = tree.get_column_at_position(mb_event.position)
 	var tree_item:TreeItem = tests_tree.get_item_at_position(mb_event.position)
 	if not tree_item: return
+
+	if mb_event.button_index == MOUSE_BUTTON_RIGHT:
+		_popup_case_menu( tree_item, mb_event.global_position )
+		tests_tree.accept_event()
+		return
+	if mb_event.button_index != MOUSE_BUTTON_LEFT:
+		return
+	if not _is_file_item( tree_item ):
+		return
 
 	var metadata:Variant = tree_item.get_metadata(0)
 	if not metadata: return
@@ -215,6 +228,49 @@ func _on_tests_tree_gui_input(event: InputEvent) -> void:
 	var item_results:TestResult = test_def.results.get(tree_item)
 	if item_results and item_results.latest:
 		item_results.latest.call_deferred( "grab_focus")
+
+
+func _popup_case_menu( item:TreeItem, at:Vector2 ) -> void:
+	if not Engine.is_editor_hint():
+		return
+	var path:String = _row_path( item )
+	if path.is_empty():
+		return
+
+	var paths := PackedStringArray()
+	if paths.append( path ):
+		push_error( "main_panel._popup_case_menu: append failed" )
+		return
+	if _run_menu == null:
+		_run_menu = CaseMenu.new()
+	var popup:PopupMenu = _run_menu.make_run_menu( paths, "Run As" )
+	if popup == null:
+		return
+
+	if is_instance_valid( _case_popup ):
+		_case_popup.queue_free()
+	_case_popup = popup
+	add_child( popup )
+	popup.popup( Rect2i( Vector2i( at ), Vector2i.ZERO ) )
+	var err:int = popup.popup_hide.connect( _on_case_popup_hide, CONNECT_ONE_SHOT as Object.ConnectFlags )
+	if err != OK:
+		push_error( "main_panel._popup_case_menu: hide connect failed (%s)" % error_string( err ) )
+
+
+func _on_case_popup_hide() -> void:
+	if is_instance_valid( _case_popup ):
+		_case_popup.queue_free()
+	_case_popup = null
+
+
+func _row_path( item:TreeItem ) -> String:
+	var meta:Variant = item.get_metadata( 0 )
+	if not meta is TestDef:
+		return ""
+	var test_def:TestDef = meta
+	if _is_file_item( item ):
+		return test_def.folder_path.path_join( item.get_text( 0 ) )
+	return test_def.folder_path
 
 
 #      ██████  ██    ██ ███████ ██████  ██████  ██ ██████  ███████ ███████     #
@@ -755,6 +811,7 @@ func _add_folder_branch( test_def:TestDef, parent_item:TreeItem ) -> void:
 	# One script is still a folder. Collapsing it put that file on the parent.
 	var folder_item:TreeItem = parent_item.create_child()
 	folder_item.set_text( 0, test_def.name )
+	folder_item.set_metadata( 0, test_def )
 	folder_item.set_selectable( 1, false )
 	folder_item.set_icon( 0, FOLDER_OPEN )
 	folder_item.set_icon_max_width( 0, 16 )

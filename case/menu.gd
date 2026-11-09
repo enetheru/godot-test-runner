@@ -1,7 +1,7 @@
 @tool
 extends EditorContextMenuPlugin
 
-## Run Case With submenu. FileSystem dock and script tabs only.
+## Run Case With submenu. FileSystem dock, script tabs, and the test panel.
 ##
 ## EditorScript runs in this process. Play launches the player scene on the
 ## editor binary, or on a template binary with the reused pack. Headless -s
@@ -67,25 +67,9 @@ func _on_play( id: int ) -> void:
 func                        ________OVERRIDES________              ()->void:pass
 
 func _popup_menu( paths: PackedStringArray ) -> void:
-	var cases := _case_paths_in( paths )
-	if cases.is_empty():
+	var popup := make_run_menu( paths )
+	if popup == null:
 		return
-
-	_picked = cases
-	var popup := PopupMenu.new()
-	var play := PopupMenu.new()
-	play.add_item( "Editor", PLAY_EDITOR )
-	play.add_item( "template_debug", PLAY_DEBUG )
-	play.add_item( "template_release", PLAY_RELEASE )
-	var play_err := play.id_pressed.connect( _on_play )
-	if play_err != OK:
-		push_error( "menu._popup_menu: play connect failed (%s)" % error_string( play_err ) )
-	popup.add_item( "EditorScript", CaseSession.Host.EDITOR )
-	popup.add_submenu_node_item( "Play", play )
-	popup.add_item( "Headless -s", CaseSession.Host.SCRIPT )
-	var err := popup.id_pressed.connect( _on_method )
-	if err != OK:
-		push_error( "menu._popup_menu: connect failed (%s)" % error_string( err ) )
 	add_context_submenu_item( "Run Case With", popup )
 
 
@@ -95,6 +79,31 @@ func _popup_menu( paths: PackedStringArray ) -> void:
 #         ██  ██  ██ ██         ██    ██   ██ ██    ██ ██   ██      ██         #
 #         ██      ██ ███████    ██    ██   ██  ██████  ██████  ███████         #
 func                        _________METHODS_________              ()->void:pass
+
+func make_run_menu( paths: PackedStringArray, title: String = "" ) -> PopupMenu:
+	var cases := _case_paths_in( paths )
+	if cases.is_empty():
+		return null
+
+	_picked = cases
+	var popup := PopupMenu.new()
+	if not title.is_empty():
+		popup.add_separator( title )
+	var play := PopupMenu.new()
+	play.add_item( "Editor", PLAY_EDITOR )
+	play.add_item( "template_debug", PLAY_DEBUG )
+	play.add_item( "template_release", PLAY_RELEASE )
+	var play_err := play.id_pressed.connect( _on_play )
+	if play_err != OK:
+		push_error( "menu.make_run_menu: play connect failed (%s)" % error_string( play_err ) )
+	popup.add_item( "EditorScript", CaseSession.Host.EDITOR )
+	popup.add_submenu_node_item( "Play", play )
+	popup.add_item( "Headless -s", CaseSession.Host.SCRIPT )
+	var err := popup.id_pressed.connect( _on_method )
+	if err != OK:
+		push_error( "menu.make_run_menu: connect failed (%s)" % error_string( err ) )
+	return popup
+
 
 func run_path( path: String ) -> void:
 	var loaded: Resource = load( path )

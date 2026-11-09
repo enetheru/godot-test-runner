@@ -37,3 +37,5 @@ Opens the options resource in the Inspector.
 ## Rows
 
 The button on a row runs that script. A click on a script name selects that file in the FileSystem dock.
+
+A right-click on a case, or on a heading that contains cases, opens the Run As menu.
