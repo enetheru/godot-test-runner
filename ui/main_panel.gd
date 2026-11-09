@@ -41,7 +41,6 @@ const color_FAILURE = Color.DARK_RED
 const color_FAILURE_bright = Color.TOMATO
 const color_WARNING = Color.DARK_GOLDENROD
 const color_WARNING_bright = Color.GOLD
-const color_TEST = Color.HOT_PINK
 
 
 # ██████  ██████   ██████  ██████  ███████ ██████  ████████ ██ ███████ ███████ #
@@ -94,6 +93,11 @@ var _service:Node = null
 var _run_menu: CaseMenu
 var _case_popup: PopupMenu
 
+## Dock walks inside process_selection. The menu counter can hit zero early.
+var _walks: int = 0
+## Cancel for a dock walk. The case menu keeps its own halt flag.
+var _halt_walk: bool = false
+
 # Configuration
 var test_path:String = OptsScript.DEFAULT_TESTS_DIR
 var case_path:String = OptsScript.DEFAULT_CASES_DIR
@@ -115,11 +119,15 @@ var already_updating:bool = false
 func                        __________EVENTS_________              ()->void:pass
 
 func _on_run_pressed() -> void:
-	if CaseMenu.set_count > 0:
-		if CaseMenu.halt_set:
+	if _walks > 0 or CaseMenu.set_count > 0:
+		var stopping: bool = ( _walks > 0 and _halt_walk ) or CaseMenu.halt_set
+		if stopping:
 			return
-		CaseMenu.halt_set = true
-		_on_set_changed( true )
+		if _walks > 0:
+			_halt_walk = true
+		if CaseMenu.set_count > 0:
+			CaseMenu.halt_set = true
+		_apply_run_button()
 		return
 
 	# Outside the editor there is no Run As menu, so the rows run here.
@@ -144,8 +152,15 @@ func _on_run_pressed() -> void:
 		return
 
 
-func _on_set_changed( active: bool ) -> void:
-	var cancelling: bool = active and CaseMenu.halt_set
+func _on_set_changed( _active: bool ) -> void:
+	_apply_run_button()
+
+
+func _apply_run_button() -> void:
+	if not is_node_ready():
+		return
+	var active: bool = _walks > 0 or CaseMenu.set_count > 0
+	var cancelling: bool = active and ( ( _walks > 0 and _halt_walk ) or CaseMenu.halt_set )
 	if cancelling:
 		run_btn.text = "Cancelling"
 		run_btn.icon = null
@@ -330,6 +345,12 @@ func _row_path( item:TreeItem ) -> String:
 #      ██████    ████   ███████ ██   ██ ██   ██ ██ ██████  ███████ ███████     #
 func                        ________OVERRIDES________              ()->void:pass
 
+func _notification( what:int ) -> void:
+	if what != NOTIFICATION_THEME_CHANGED or not is_node_ready():
+		return
+	_fit_result_column()
+
+
 func _ready() -> void:
 	if opts != null \
 	and not opts.changed.is_connected( _on_opts_changed ):
@@ -442,16 +463,24 @@ func _run_rows_as_editor( _paths:PackedStringArray ) -> void:
 
 
 func process_selection() -> void:
+	_walks += 1
 	CaseMenu.begin_set()
+	_apply_run_button()
 	# One frame so Cancel paints before the first script, and a click can land.
 	var scene_tree:SceneTree = get_tree()
 	if scene_tree != null:
 		await scene_tree.process_frame
 	for file_item:TreeItem in _selection_files():
-		if CaseMenu.halt_set:
+		if _halt_walk or CaseMenu.halt_set:
 			break
+		# The menu counter can drop after one script. This walk is still open.
+		_apply_run_button()
 		await process_test( file_item )
+	_walks = maxi( _walks - 1, 0 )
+	if _walks == 0:
+		_halt_walk = false
 	CaseMenu.end_set()
+	_apply_run_button()
 
 
 func _selection_files() -> Array[TreeItem]:
@@ -483,7 +512,7 @@ func process_test( file_item:TreeItem ) -> void:
 	result.latest = info_box
 	result.retcode = RetCode.TEST_FAILED
 	result.output = ["Only Just Created"]
-	update_tree_item(file_item, "INPROGRESS", Color.REBECCA_PURPLE)
+	update_tree_item(file_item, "INPROGRESS")
 
 	# Tests can be run three ways.
 	# 	1. Headless as EditorScript
@@ -797,10 +826,28 @@ func add_action_row(
 	item.set_text_alignment(1, HORIZONTAL_ALIGNMENT_CENTER)
 	item.set_selectable(1, false )
 	item.set_text(1, "PENDING ")
-	item.set_expand_right(1, true)
-	item.set_text_overrun_behavior(1, TextServer.OVERRUN_NO_TRIMMING)
+	item.set_expand_right(1, false)
+	item.set_text_overrun_behavior(1, TextServer.OVERRUN_TRIM_ELLIPSIS)
 	item.add_button(1, DEBUG_RERUN, -1, false, "[Re]Run Test Action" )
 	item.set_icon(0, FILE_CODE)
+
+
+func _fit_result_column() -> void:
+	var font := tests_tree.get_theme_font( &"font" )
+	var font_size := tests_tree.get_theme_font_size( &"font_size" )
+	var widest := 0
+	if font != null:
+		for word:String in [ "PENDING ", "INPROGRESS", "WARNING", "FAILED", "OK", "Result" ]:
+			var text_width := font.get_string_size( word, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size ).x
+			widest = maxi( widest, ceili( text_width ) )
+	var outline := tests_tree.get_theme_constant( &"outline_size" )
+	var button_margin := tests_tree.get_theme_constant( &"button_margin" )
+	var inner := tests_tree.get_theme_constant( &"inner_item_margin_left" ) \
+			+ tests_tree.get_theme_constant( &"inner_item_margin_right" )
+	var separation := tests_tree.get_theme_constant( &"h_separation" )
+	var width := widest + outline * 2 + DEBUG_RERUN.get_width() \
+			+ button_margin + inner + separation
+	tests_tree.set_column_custom_minimum_width( 1, width )
 
 
 func regenerate_tree() -> void:
@@ -815,8 +862,7 @@ func regenerate_tree() -> void:
 
 	tests_tree.set_column_title(1, "Result")
 	tests_tree.set_column_expand( 1, false)
-	#tests_tree.set_column_custom_minimum_width(1, 160)
-	# TODO Calculate the size based on the theme font and the maximum size.
+	_fit_result_column()
 
 	# Add the root
 	var _top_item:TreeItem = tests_tree.create_item()
@@ -831,25 +877,38 @@ func regenerate_tree() -> void:
 	_apply_list_filter( list_filter.text if list_filter != null else "" )
 
 
-func update_tree_item(
-			item:TreeItem,
-			label:String = "PENDING",
-			color:Color = color_TEST
-			) -> void:
-	item.set_text(1, label)
+func _status_font_color( label:String ) -> Color:
+	var theme_name := &"font_color"
+	var fallback := Color.WHITE
 	match label:
-		"PENDING" when color == color_TEST:
-			item.clear_custom_bg_color(0)
-			item.clear_custom_bg_color(1)
-		"FAILURE" when color == color_TEST:
-			item.set_custom_bg_color(0, color_FAILURE)
-			item.set_custom_bg_color(1, color_FAILURE)
-		"OK" when color == color_TEST:
-			item.set_custom_bg_color(0, color_OK)
-			item.set_custom_bg_color(1, color_OK)
-		_:
-			item.set_custom_bg_color(0, color)
-			item.set_custom_bg_color(1, color)
+		"OK":
+			theme_name = &"success_color"
+			fallback = color_OK_bright
+		"WARNING":
+			theme_name = &"warning_color"
+			fallback = color_WARNING_bright
+		"FAILED":
+			theme_name = &"error_color"
+			fallback = color_FAILURE_bright
+		"INPROGRESS":
+			theme_name = &"accent_color"
+			fallback = Color(0.45, 0.65, 1.0)
+	if Engine.is_editor_hint():
+		var editor_theme := EditorInterface.get_editor_theme()
+		if editor_theme != null and editor_theme.has_color( theme_name, &"Editor" ):
+			return editor_theme.get_color( theme_name, &"Editor" )
+	return fallback
+
+
+func update_tree_item( item:TreeItem, label:String = "PENDING" ) -> void:
+	item.set_text(1, label)
+	item.clear_custom_bg_color(0)
+	item.clear_custom_bg_color(1)
+	item.clear_custom_color(0)
+	if label == "PENDING":
+		item.clear_custom_color(1)
+		return
+	item.set_custom_color(1, _status_font_color(label))
 
 
 func _add_folder_branch( test_def:TestDef, parent_item:TreeItem ) -> void:

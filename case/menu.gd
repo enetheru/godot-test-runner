@@ -53,10 +53,12 @@ func _on_method( id: int ) -> void:
 	var paths := _picked.duplicate()
 	match id:
 		CaseSession.Host.EDITOR:
+			# Hide already queue_frees this popup. Awaiting in this callback
+			# ends that walk when the first script returns.
 			if editor_runner.is_valid():
-				await editor_runner.call( paths )
+				editor_runner.call_deferred( paths )
 			else:
-				await _run_editor( paths )
+				Callable( self, &"_run_editor" ).call_deferred( paths )
 		CaseSession.Host.SCRIPT:
 			_run_script_host( paths )
 
