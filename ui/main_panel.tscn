@@ -101,6 +101,11 @@ text = "Clear Results
 "
 icon = ExtResource("6_blb3b")
 
+[node name="Options" type="Button" parent="Buttons/Right"]
+layout_mode = 2
+tooltip_text = "Open the options resource in the Inspector."
+text = "Options"
+
 [node name="Help" type="Button" parent="Buttons/Right" unique_id=1470921345]
 layout_mode = 2
 text = "Help"
@@ -197,6 +202,7 @@ autowrap_mode = 3
 [connection signal="toggled" from="Buttons/Right/Tracy" to="." method="_on_tracy_toggled"]
 [connection signal="item_selected" from="Buttons/Right/Level" to="." method="_on_lvl_selected"]
 [connection signal="pressed" from="Buttons/Right/ClearResults" to="." method="_on_clear_results_pressed"]
+[connection signal="pressed" from="Buttons/Right/Options" to="." method="_on_options_pressed"]
 [connection signal="pressed" from="Buttons/Right/Help" to="." method="_on_help_pressed"]
 [connection signal="button_clicked" from="TestOutput/TestList/TestsTree" to="." method="_on_tests_tree_button_clicked"]
 [connection signal="gui_input" from="TestOutput/TestList/TestsTree" to="." method="_on_tests_tree_gui_input"]

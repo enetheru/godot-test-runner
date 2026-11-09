@@ -30,6 +30,10 @@ Sets how much a run prints, from Silent through Trace. A failure's log is in its
 
 Clears the result boxes and the row status.
 
+## Options
+
+Opens the options resource in the Inspector.
+
 ## Rows
 
 The button on a row runs that script. A click on a script name selects that file in the FileSystem dock.

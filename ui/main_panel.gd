@@ -139,6 +139,14 @@ func _on_help_pressed() -> void:
 	help_text.call_deferred( "grab_focus" )
 
 
+func _on_options_pressed() -> void:
+	if not Engine.is_editor_hint():
+		return
+
+	var target:Resource = opts if opts != null else OptsScript.shared()
+	EditorInterface.inspect_object( target )
+
+
 func _on_tracy_toggled(toggled_on: bool) -> void:
 	_store_flag( &"tracy", toggled_on )
 
