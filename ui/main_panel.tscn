@@ -5,6 +5,7 @@
 [ext_resource type="Texture2D" uid="uid://c5mjw61j4wra4" path="res://addons/enetheru.test-runner/res/folder-sync.svg" id="5_k3utk"]
 [ext_resource type="Texture2D" uid="uid://clvd7lgq1sdn3" path="res://addons/enetheru.test-runner/res/trash-can.svg" id="6_blb3b"]
 [ext_resource type="Texture2D" uid="uid://dngr7cckmvug" path="res://addons/enetheru.test-runner/res/circle-question.svg" id="7_5fedl"]
+[ext_resource type="Theme" path="res://addons/enetheru.test-runner/ui/main_panel_theme.tres" id="8_theme"]
 
 [node name="TestRunner" type="VBoxContainer" unique_id=1145744051]
 anchors_preset = 15
@@ -14,16 +15,15 @@ grow_horizontal = 2
 grow_vertical = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
+theme = ExtResource("8_theme")
 script = ExtResource("1_alnk0")
 
-[node name="Buttons" type="GridContainer" parent="." unique_id=1520639736]
+[node name="Buttons" type="HBoxContainer" parent="." unique_id=1520639736]
 layout_mode = 2
 size_flags_horizontal = 3
-columns = 3
 
 [node name="Left" type="HBoxContainer" parent="Buttons" unique_id=2051897267]
 layout_mode = 2
-size_flags_horizontal = 3
 size_flags_vertical = 0
 
 [node name="Run" type="Button" parent="Buttons/Left" unique_id=613329788]
@@ -46,27 +46,23 @@ text = "Reload Tests
 "
 icon = ExtResource("5_k3utk")
 
-[node name="Center" type="HBoxContainer" parent="Buttons" unique_id=39480746]
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 0
-
-[node name="StatsCounter" type="RichTextLabel" parent="Buttons/Center" unique_id=1611664917]
-layout_mode = 2
-size_flags_horizontal = 3
-bbcode_enabled = true
-text = "Stats"
-fit_content = true
-scroll_active = false
-autowrap_mode = 0
-horizontal_alignment = 1
-vertical_alignment = 1
-
 [node name="Right" type="HBoxContainer" parent="Buttons" unique_id=726647946]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 0
 alignment = 2
+
+[node name="StatsCounter" type="RichTextLabel" parent="Buttons/Right" unique_id=1611664917]
+theme_type_variation = &"ResultStats"
+layout_mode = 2
+size_flags_vertical = 4
+bbcode_enabled = true
+text = "Stats"
+fit_content = true
+scroll_active = false
+autowrap_mode = 0
+horizontal_alignment = 2
+vertical_alignment = 1
 
 [node name="ClearResults" type="Button" parent="Buttons/Right" unique_id=878639755]
 layout_mode = 2
@@ -113,6 +109,7 @@ tooltip_text = "Glob on the row name. * and ? are wildcards. Other text matches 
 clear_button_enabled = true
 
 [node name="TestsTree" type="Tree" parent="TestOutput/TestList" unique_id=111155159]
+theme_type_variation = &"TestTree"
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3

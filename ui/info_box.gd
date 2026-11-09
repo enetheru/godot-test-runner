@@ -1,41 +1,52 @@
 @tool
 extends PanelContainer
 
-var title : String
+var title:String
 
-@onready var stylebox : StyleBoxFlat = preload('../res/info_style_box.tres').duplicate()
-@onready var label: RichTextLabel = $Elements/Label
-@onready var rtl: RichTextLabel = $Elements/RichTextLabel
-
-
-func _on_focus_entered() -> void:
-	stylebox.bg_color = Color(0.275, 0.439, 0.584)
+@onready var label:RichTextLabel = $Elements/Label
+@onready var rtl:RichTextLabel = $Elements/Log/RichTextLabel
 
 
-func _on_focus_exited() -> void:
-	stylebox.bg_color = Color(0.216, 0.31, 0.4)
-
-
-func _ready() -> void:
-	focus_mode = Control.FOCUS_CLICK
-	add_theme_stylebox_override("panel", stylebox)
-	label.add_theme_stylebox_override("normal", stylebox)
-
-
-func set_title( new_title : String ) -> void:
+func set_title( new_title:String ) -> void:
 	title = new_title
 	label.clear()
-	label.append_text(new_title)
+	label.add_text( new_title )
 
 
-func set_content(
-			border_color : Color,
-			icon : Texture2D,
-			text : String
-			) -> void:
-	stylebox.border_color = border_color
+## Status word on the card, log in the well under it.
+func set_content( status:String, text:String ) -> void:
 	label.clear()
-	label.add_image(icon, 23, 23, border_color.lightened(0.3) )
-	label.append_text(title)
+	label.push_color( _status_color( status ) )
+	label.add_text( status )
+	label.pop()
+	label.add_text( "  %s" % title )
+	_write_log( text )
+
+
+func _write_log( text:String ) -> void:
 	rtl.clear()
-	rtl.append_text(text)
+	if text.is_empty():
+		return
+	var dim := rtl.get_theme_color( &"dim_line" )
+	var lines:PackedStringArray = text.split( "\n" )
+	for i:int in lines.size():
+		if i > 0:
+			rtl.add_text( "\n" )
+		if i % 2 == 1:
+			rtl.push_color( dim )
+			rtl.add_text( lines[i] )
+			rtl.pop()
+		else:
+			rtl.add_text( lines[i] )
+
+
+func _status_color( status:String ) -> Color:
+	var item := &"default_color"
+	match status:
+		"OK":
+			item = &"ok"
+		"WARNING":
+			item = &"warning"
+		"FAILED":
+			item = &"failed"
+	return label.get_theme_color( item )

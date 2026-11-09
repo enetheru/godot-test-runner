@@ -20,11 +20,11 @@ Matches row names, and it ignores case. A word matches anywhere in the name. `*`
 
 ## Counts
 
-The middle of the bar counts folders, results, failures, and passes.
+The right side of the bar reads the counts in words: folders, results, failures, and passes. Those colors come from the panel theme. The counts sit beside Clear Results, Options, and Help.
 
 ## Level
 
-A failure's log is in its result box. A pass includes its log when the level includes Info.
+Each run adds its own card, and earlier cards stay in the list. The status word is the card title, colored from the result theme, with the script name beside it. The log sits in that card, under the title. A failure's log is included. A pass includes its log when the level includes Info.
 
 ## Clear Results
 

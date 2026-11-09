@@ -1,23 +1,7 @@
 [gd_scene format=3 uid="uid://dt0eqt7nuorql"]
 
 [ext_resource type="Script" uid="uid://gli414sa5hot" path="res://addons/enetheru.test-runner/ui/info_box.gd" id="1_hcdtn"]
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_7doaj"]
-content_margin_left = 2.0
-content_margin_top = 2.0
-content_margin_right = 2.0
-content_margin_bottom = 2.0
-bg_color = Color(0.215686, 0.309804, 0.4, 1)
-border_width_left = 1
-border_width_top = 1
-border_width_right = 1
-border_width_bottom = 1
-corner_radius_top_left = 2
-corner_radius_top_right = 2
-corner_radius_bottom_right = 2
-corner_radius_bottom_left = 2
-corner_detail = 3
-shadow_offset = Vector2(1, 1)
+[ext_resource type="Theme" path="res://addons/enetheru.test-runner/ui/info_box_theme.tres" id="2_theme"]
 
 [node name="TestInfo" type="PanelContainer" unique_id=1247760291]
 anchors_preset = 15
@@ -27,27 +11,32 @@ grow_horizontal = 2
 grow_vertical = 2
 size_flags_horizontal = 3
 focus_mode = 1
-theme_override_styles/panel = SubResource("StyleBoxFlat_7doaj")
+theme = ExtResource("2_theme")
+theme_type_variation = &"ResultCard"
 script = ExtResource("1_hcdtn")
 
 [node name="Elements" type="VBoxContainer" parent="." unique_id=1882591603]
 layout_mode = 2
+theme_override_constants/separation = 6
 
 [node name="Label" type="RichTextLabel" parent="Elements" unique_id=1948266545]
+theme_type_variation = &"ResultTitle"
 layout_mode = 2
-theme_override_styles/normal = SubResource("StyleBoxFlat_7doaj")
 bbcode_enabled = true
 text = "Title"
 fit_content = true
 scroll_active = false
 autowrap_mode = 0
 
-[node name="RichTextLabel" type="RichTextLabel" parent="Elements" unique_id=1366469820]
+[node name="Log" type="PanelContainer" parent="Elements" unique_id=1904412201]
+theme_type_variation = &"ResultLog"
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="RichTextLabel" type="RichTextLabel" parent="Elements/Log" unique_id=1366469820]
+theme_type_variation = &"ResultLogText"
 layout_mode = 2
 focus_mode = 2
 bbcode_enabled = true
 fit_content = true
 selection_enabled = true
-
-[connection signal="focus_entered" from="." to="." method="_on_focus_entered"]
-[connection signal="focus_exited" from="." to="." method="_on_focus_exited"]

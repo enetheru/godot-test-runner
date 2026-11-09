@@ -1,0 +1,9 @@
+[gd_resource type="Theme" format=3]
+
+[resource]
+ResultStats/base_type = &"RichTextLabel"
+ResultStats/colors/plain = Color(0.785, 0.785, 0.785, 1)
+ResultStats/colors/failure = Color(1, 0.47, 0.42, 1)
+ResultStats/colors/pass = Color(0.45, 0.95, 0.5, 1)
+TestTree/base_type = &"Tree"
+TestTree/colors/stripe = Color(0.785, 0.785, 0.785, 0.07)

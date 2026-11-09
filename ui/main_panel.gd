@@ -28,18 +28,11 @@ const DEBUG_RERUN = preload('../res/debug-rerun.svg')
 const FILE_CODE = preload('../res/file-code.svg')
 const FOLDER_OPEN = preload('../res/folder-open.svg')
 
-const FLIP_TAILS = preload('../res/flip_tails.svg')
-const FLIP_HEAD = preload('../res/flip_head.svg')
-const FLIP_HALF = preload('../res/flip_half.svg')
-
 const MEDAL = preload('../res/medal.tres')
 const SKULL = preload('../res/skull.svg')
 
-const color_OK = Color.DARK_GREEN
 const color_OK_bright = Color.GREEN_YELLOW
-const color_FAILURE = Color.DARK_RED
 const color_FAILURE_bright = Color.TOMATO
-const color_WARNING = Color.DARK_GOLDENROD
 const color_WARNING_bright = Color.GOLD
 
 
@@ -57,7 +50,7 @@ func                        ________PROPERTIES_______              ()->void:pass
 var _play_icon: Texture2D
 
 # Top Row Center
-@onready var stats_counter: RichTextLabel = $Buttons/Center/StatsCounter
+@onready var stats_counter: RichTextLabel = $Buttons/Right/StatsCounter
 # Top Row Right
 @onready var clear_btn: Button = $Buttons/Right/ClearResults
 @onready var help_btn: Button = $Buttons/Right/Help
@@ -349,6 +342,7 @@ func _notification( what:int ) -> void:
 	if what != NOTIFICATION_THEME_CHANGED or not is_node_ready():
 		return
 	_fit_result_column()
+	_stripe_tree()
 
 
 func _ready() -> void:
@@ -360,6 +354,9 @@ func _ready() -> void:
 	_play_icon = run_btn.icon
 	CaseMenu.set_changed = _on_set_changed
 	_on_set_changed( CaseMenu.set_count > 0 )
+	if not tests_tree.item_collapsed.is_connected( _on_tree_collapsed ):
+		@warning_ignore( "return_value_discarded" )
+		tests_tree.item_collapsed.connect( _on_tree_collapsed )
 	_on_reload_pressed()
 
 
@@ -369,6 +366,8 @@ func _exit_tree() -> void:
 		opts.changed.disconnect( _on_opts_changed )
 	if CaseMenu.set_changed == _on_set_changed:
 		CaseMenu.set_changed = Callable()
+	if tests_tree != null and tests_tree.item_collapsed.is_connected( _on_tree_collapsed ):
+		tests_tree.item_collapsed.disconnect( _on_tree_collapsed )
 
 
 #         ███    ███ ███████ ████████ ██   ██  ██████  ██████  ███████         #
@@ -433,15 +432,24 @@ func update_stats() -> void:
 				var child_def:TestDef = child_v
 				stack.append( child_def )
 
-	stats_counter.add_text("%d:" % groups)
-	stats_counter.add_image(FOLDER_OPEN, 23)
-	stats_counter.add_text(", %d:" % results)
-	stats_counter.add_image(FLIP_HALF, 23)
-	stats_counter.add_text(", %d:" % failures)
-	stats_counter.add_image(FLIP_TAILS, 23, 23, color_FAILURE_bright)
-	stats_counter.add_text(", %d:" % successes)
-	stats_counter.add_image(FLIP_HEAD, 23, 23, color_OK_bright)
+	var plain := stats_counter.get_theme_color( &"plain" )
+	var bad := stats_counter.get_theme_color( &"failure" )
+	var good := stats_counter.get_theme_color( &"pass" )
+	_add_count( groups, "folder", "folders", plain, false )
+	_add_count( results, "result", "results", plain, true )
+	_add_count( failures, "failure", "failures", bad, true )
+	_add_count( successes, "pass", "passes", good, true )
 	already_updating = false
+
+
+## One count, in [param tint]. A separator stays in the label's own font color.
+func _add_count( count:int, one:String, many:String, tint:Color, separator:bool ) -> void:
+	if separator:
+		stats_counter.add_text( ", " )
+	var word := one if count == 1 else many
+	stats_counter.push_color( tint )
+	stats_counter.add_text( "%d %s" % [count, word] )
+	stats_counter.pop()
 
 
 func create_info( file_item:TreeItem ) -> Control:
@@ -529,7 +537,7 @@ func process_test( file_item:TreeItem ) -> void:
 			result.output = ["Re-Writing the script for in-game testing failed."]
 			info_text = result.output.reduce(Shared.reducer_to_lines)
 			update_tree_item(file_item, "FAILED" )
-			info_box.set_content( color_FAILURE, FLIP_TAILS, info_text)
+			info_box.set_content( "FAILED", info_text )
 			return
 
 	# Load up the script and run the test
@@ -558,13 +566,13 @@ func process_test( file_item:TreeItem ) -> void:
 	# Update the tree_item
 	if result.retcode == RetCode.TEST_FAILED:
 		update_tree_item(file_item, "FAILED")
-		info_box.set_content( color_FAILURE, FLIP_TAILS, info_text )
+		info_box.set_content( "FAILED", info_text )
 	elif 'warn' in info_text.to_lower():
 		update_tree_item(file_item, "WARNING" )
-		info_box.set_content( color_WARNING, FLIP_HALF, info_text )
+		info_box.set_content( "WARNING", info_text )
 	else:
 		update_tree_item(file_item, "OK" )
-		info_box.set_content( color_OK, FLIP_HEAD, info_text )
+		info_box.set_content( "OK", info_text )
 	update_stats()
 
 
@@ -858,7 +866,7 @@ func regenerate_tree() -> void:
 	tests_tree.clear()
 
 	# Add the column headers
-	tests_tree.set_column_title(0, "TestElement")
+	tests_tree.set_column_title(0, "Test")
 
 	tests_tree.set_column_title(1, "Result")
 	tests_tree.set_column_expand( 1, false)
@@ -902,8 +910,6 @@ func _status_font_color( label:String ) -> Color:
 
 func update_tree_item( item:TreeItem, label:String = "PENDING" ) -> void:
 	item.set_text(1, label)
-	item.clear_custom_bg_color(0)
-	item.clear_custom_bg_color(1)
 	item.clear_custom_color(0)
 	if label == "PENDING":
 		item.clear_custom_color(1)
@@ -937,8 +943,40 @@ func _apply_list_filter( pattern:String ) -> void:
 	var root:TreeItem = tests_tree.get_root()
 	if root == null:
 		return
-	if _filter_item( root, _list_glob( pattern ) ):
+	var _shown:bool = _filter_item( root, _list_glob( pattern ) )
+	_stripe_tree()
+
+
+func _on_tree_collapsed( _item:TreeItem ) -> void:
+	_stripe_tree()
+
+
+## Tree paints a custom background over the selection style, so the stripe stays a theme color.
+func _stripe_tree() -> void:
+	if tests_tree == null:
 		return
+	var root:TreeItem = tests_tree.get_root()
+	if root == null:
+		return
+	var tint := tests_tree.get_theme_color( &"stripe" )
+	var index:Array[int] = [0]
+	_stripe_item( root, tint, index )
+
+
+func _stripe_item( item:TreeItem, tint:Color, index:Array[int] ) -> void:
+	if not item.visible:
+		return
+	var n:int = index[0]
+	index[0] = n + 1
+	if n % 2 == 1:
+		item.set_custom_bg_color( 0, tint )
+	else:
+		item.clear_custom_bg_color( 0 )
+	item.clear_custom_bg_color( 1 )
+	if item.collapsed:
+		return
+	for child:TreeItem in item.get_children():
+		_stripe_item( child, tint, index )
 
 
 ## A bare word matches anywhere in the name. * and ? stay as written.
