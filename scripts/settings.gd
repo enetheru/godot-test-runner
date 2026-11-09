@@ -151,6 +151,9 @@ var _target_file:String
 ## Full ProjectSettings path → target property name (grouping prefixes).
 var setting_prop_map:Dictionary = {}
 
+## True while [method push_target] writes ProjectSettings.
+var _pushing:bool = false
+
 ## TODO: per-setting callables when a setting changes.
 #var setting_func_map:Dictionary = {}
 
@@ -165,8 +168,17 @@ signal settings_changed( setting_name:StringName, value:Variant )
 func                        __________EVENTS_________              ()->void:pass
 
 func _on_project_settings_changed() -> void:
+	if _pushing:
+		return
 	Log.lvl( Log.Level.TRACE, "_on_project_settings_changed", self )
 	update_target.call_deferred()
+
+
+## Resource target mutated: project fields into ProjectSettings.
+func _on_target_changed() -> void:
+	if _pushing:
+		return
+	push_target()
 
 
 #      ██████  ██    ██ ███████ ██████  ██████  ██ ██████  ███████ ███████     #
@@ -191,6 +203,10 @@ func _init( target:Object, prefix:String = "plugin/un-named" ) -> void:
 
 	@warning_ignore_start("return_value_discarded")
 	ProjectSettings.settings_changed.connect(_on_project_settings_changed)
+	if _target is Resource:
+		@warning_ignore("unsafe_cast")
+		var res:Resource = _target as Resource
+		res.changed.connect(_on_target_changed)
 	@warning_ignore_restore("return_value_discarded")
 
 
@@ -365,6 +381,8 @@ func add_target_properties() -> void:
 
 ## Pull ProjectSettings values into the target; emit [signal settings_changed].
 func update_target() -> void:
+	if _pushing:
+		return
 	Log.lvl( Log.Level.TRACE, "update_target", self )
 	for setting_name:String in setting_prop_map.keys():
 		var new_val:Variant = ProjectSettings.get(setting_name)
@@ -374,6 +392,29 @@ func update_target() -> void:
 		Log.lvl( Log.Level.TRACE, "Updating '%s' : %s" % [setting_name, new_val], self )
 		_target.set(prop_name, new_val)
 		settings_changed.emit(prop_name, new_val)
+
+
+## Write mapped target properties into ProjectSettings and save once.
+func push_target() -> void:
+	if not is_instance_valid(_target) or setting_prop_map.is_empty():
+		return
+	_pushing = true
+	var dirty:bool = false
+	for setting_full:String in setting_prop_map.keys():
+		var prop_name:StringName = setting_prop_map[setting_full]
+		var property_value:Variant = _target.get(prop_name)
+		if ProjectSettings.has_setting(setting_full) \
+		and ProjectSettings.get_setting(setting_full) == property_value:
+			continue
+		ProjectSettings.set_setting(setting_full, property_value)
+		dirty = true
+	if dirty:
+		var err:Error = ProjectSettings.save()
+		if err != OK:
+			push_warning(
+					"Settings.push_target: ProjectSettings.save failed (%s)"
+					% error_string(err))
+	_pushing = false
 
 
 func inspect_target() -> void:
