@@ -115,8 +115,22 @@ var already_updating:bool = false
 func                        __________EVENTS_________              ()->void:pass
 
 func _on_run_pressed() -> void:
-	# The button signal drops this state. Awaiting keeps it until the selection finishes.
-	await process_selection()
+	# Outside the editor there is no Run As menu, so the rows run here.
+	if not Engine.is_editor_hint():
+		for file_item:TreeItem in _selection_files():
+			await process_test( file_item )
+		return
+
+	var case_paths := PackedStringArray()
+	for file_item:TreeItem in _selection_files():
+		var path:String = _row_path( file_item )
+		if not CaseSession.is_case_path( path ):
+			continue
+		if case_paths.append( path ):
+			push_error( "main_panel._on_run_pressed: append failed" )
+			return
+	if not _show_run_menu( case_paths, _run_menu_origin() ):
+		return
 
 
 func _on_reload_pressed() -> void:
@@ -241,11 +255,18 @@ func _popup_case_menu( item:TreeItem, at:Vector2 ) -> void:
 	if paths.append( path ):
 		push_error( "main_panel._popup_case_menu: append failed" )
 		return
+	if not _show_run_menu( paths, at ):
+		return
+
+
+func _show_run_menu( paths:PackedStringArray, at:Vector2 ) -> bool:
+	if not Engine.is_editor_hint() or paths.is_empty():
+		return false
 	if _run_menu == null:
 		_run_menu = CaseMenu.new()
 	var popup:PopupMenu = _run_menu.make_run_menu( paths, "Run As" )
 	if popup == null:
-		return
+		return false
 
 	if is_instance_valid( _case_popup ):
 		_case_popup.queue_free()
@@ -254,7 +275,12 @@ func _popup_case_menu( item:TreeItem, at:Vector2 ) -> void:
 	popup.popup( Rect2i( Vector2i( at ), Vector2i.ZERO ) )
 	var err:int = popup.popup_hide.connect( _on_case_popup_hide, CONNECT_ONE_SHOT as Object.ConnectFlags )
 	if err != OK:
-		push_error( "main_panel._popup_case_menu: hide connect failed (%s)" % error_string( err ) )
+		push_error( "main_panel._show_run_menu: hide connect failed (%s)" % error_string( err ) )
+	return true
+
+
+func _run_menu_origin() -> Vector2:
+	return run_btn.global_position + Vector2( 0, run_btn.size.y )
 
 
 func _on_case_popup_hide() -> void:
@@ -383,17 +409,22 @@ func create_info( file_item:TreeItem ) -> Control:
 
 
 func process_selection() -> void:
-	var selection:Array
-	if test_selection.is_empty():
-		selection = tests_tree.get_root().get_children()
-	elif tests_tree.get_root() in test_selection.keys():
-		selection = tests_tree.get_root().get_children()
-	else:
-		selection = test_selection.keys()
+	for file_item:TreeItem in _selection_files():
+		await process_test( file_item )
 
+
+func _selection_files() -> Array[TreeItem]:
+	var files:Array[TreeItem] = []
+	var root:TreeItem = tests_tree.get_root()
+	if root == null:
+		return files
+	var selection:Array = test_selection.keys()
+	if selection.is_empty() or root in selection:
+		selection = root.get_children()
 	for item:TreeItem in selection:
 		for file_item:TreeItem in _file_items_under( item ):
-			await process_test( file_item )
+			files.append( file_item )
+	return files
 
 
 

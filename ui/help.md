@@ -4,7 +4,7 @@ This panel runs the test scripts under the tests folder and the case scripts und
 
 ## Run
 
-Runs the selected rows. An empty selection runs every row still on screen.
+Opens the Run As menu for the selected cases. An empty selection offers every case still on screen.
 
 ## Reload Tests
 
