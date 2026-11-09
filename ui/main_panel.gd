@@ -365,12 +365,6 @@ func process_test( file_item:TreeItem ) -> void:
 	elif Engine.is_editor_hint():
 		var instance:TestBase  = script.new()
 		if instance:await run_test_base( instance, result )
-	#else:
-		#var instance:PlayBase  = script.new()
-		#if instance :
-			#get_tree().root.add_child(instance, true)
-			#await run_play_base( instance, result,  )
-		#instance.queue_free()
 
 	#Erase our alternate script file after we are done.
 	if not case_run and not Engine.is_editor_hint():
@@ -431,15 +425,6 @@ func run_case( script:GDScript, result:TestResult ) -> void:
 	result.output = []
 	for row:String in session.line().split( "\n" ):
 		result.output.append( row )
-
-
-#func run_play_base( instance:PlayBase, result:TestResult ) -> void:
-	#_apply_opts()
-	#instance.local_lvl = test_lvl
-	#@warning_ignore('redundant_await')
-	#await instance.run_test()
-	#result.retcode = instance.runcode as RetCode
-	#result.output = instance.output
 
 
 func re_write( orig_path:String) -> String:
@@ -526,7 +511,6 @@ func _apply_opts() -> void:
 	if capture_ready and test_tracy:
 		installer = Callable(TracyCapture, &"install")
 	TestBase.prepare_run = installer
-	#PlayBase.prepare_run = installer
 	if is_instance_valid( _service ) \
 	and _service.has_method( &"set_lvl" ):
 		_service.call( &"set_lvl", test_lvl )
