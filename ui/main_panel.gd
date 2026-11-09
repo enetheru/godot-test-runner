@@ -19,6 +19,7 @@ const RetCode = Shared.RetCode
 
 # Scenes
 const INFO_BOX = preload('info_box.tscn')
+const HELP_PATH:String = "res://addons/enetheru.test-runner/ui/help.md"
 
 # Resources
 # Icons
@@ -63,6 +64,7 @@ func                        ________PROPERTIES_______              ()->void:pass
 
 # Help Popup
 @onready var help_popup: PopupPanel = $PopupPanel
+@onready var help_text: RichTextLabel = $PopupPanel/HelpText
 
 # tree control
 @onready var list_filter: LineEdit = $TestOutput/TestList/FilterRow/Filter
@@ -121,6 +123,20 @@ func _on_reload_pressed() -> void:
 
 func _on_filter_text_changed( new_text:String ) -> void:
 	_apply_list_filter( new_text )
+
+
+func _on_help_pressed() -> void:
+	# Click-through made every press land on the editor, which hid the popup.
+	help_popup.mouse_passthrough = false
+	help_popup.wrap_controls = false
+	help_text.text = _help_bbcode( _load_help() )
+	var bounds:Vector2 = get_viewport_rect().size
+	var width:int = maxi( mini( int( bounds.x * 0.62 ), 880 ), 520 )
+	var height:int = maxi( mini( int( bounds.y * 0.72 ), 760 ), 420 )
+	help_popup.size = Vector2i( width, height )
+	help_popup.popup_centered()
+	help_text.call_deferred( "scroll_to_line", 0 )
+	help_text.call_deferred( "grab_focus" )
 
 
 func _on_tracy_toggled(toggled_on: bool) -> void:
@@ -525,6 +541,45 @@ func _sync_lvl_btn() -> void:
 		idx = 0
 	lvl_btn.select( idx )
 	lvl_btn.set_block_signals( false )
+
+
+func _load_help() -> String:
+	var body:String = FileAccess.get_file_as_string( HELP_PATH )
+	if FileAccess.get_open_error() != OK:
+		return "The help file failed to load."
+	return body
+
+
+## Headings and `code` spans. The rest of the line stays as written.
+func _help_bbcode( md:String ) -> String:
+	var out:String = ""
+	var started:bool = false
+	for raw:String in md.split( "\n" ):
+		if started:
+			out += "\n"
+		started = true
+		var line:String = raw.strip_edges()
+		if line.is_empty():
+			continue
+		if line.begins_with( "## " ):
+			out += "[font_size=18][b]%s[/b][/font_size]" % _md_inline( line.substr( 3 ) )
+			continue
+		if line.begins_with( "# " ):
+			out += "[font_size=22][b]%s[/b][/font_size]" % _md_inline( line.substr( 2 ) )
+			continue
+		out += _md_inline( line )
+	return out
+
+
+func _md_inline( line:String ) -> String:
+	var parts:PackedStringArray = line.split( "`" )
+	var out:String = ""
+	for i:int in parts.size():
+		if i % 2 == 1:
+			out += "[code]%s[/code]" % parts[i]
+		else:
+			out += parts[i]
+	return out
 
 
 ## Write one flag on [member opts]. The settings helper stores it.
