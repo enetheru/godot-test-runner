@@ -31,6 +31,9 @@ var slot: EditorContextMenuPlugin.ContextMenuSlot = EditorContextMenuPlugin.CONT
 var _live: CaseSession
 var _picked: PackedStringArray = PackedStringArray()
 
+## The context menu parents this after _popup_menu returns. A local would be the only holder until then.
+var _context_popup: PopupMenu
+
 ## When set, the EditorScript item awaits this instead of the case walk.
 ## The argument is the picked case paths.
 var editor_runner: Callable
@@ -85,6 +88,9 @@ func _popup_menu( paths: PackedStringArray ) -> void:
 	var popup := make_run_menu( paths )
 	if popup == null:
 		return
+	if is_instance_valid( _context_popup ) and _context_popup.get_parent() == null:
+		_context_popup.queue_free()
+	_context_popup = popup
 	add_context_submenu_item( "Run Case With", popup )
 
 
@@ -171,6 +177,7 @@ func run_script( scr: Script ) -> void:
 func                        ________INTERNAL_________              ()->void:pass
 
 func _editor_item_menu( title: String ) -> PopupMenu:
+	_picked = PackedStringArray()
 	var popup := PopupMenu.new()
 	if not title.is_empty():
 		popup.add_separator( title )

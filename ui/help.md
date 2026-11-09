@@ -24,7 +24,7 @@ The right side of the bar reads the counts in words: folders, results, failures,
 
 ## Level
 
-Each run adds its own card, and earlier cards stay in the list. The status word is the card title, colored from the result theme, with the script name beside it. The log sits in that card, under the title. A failure's log is included. A pass includes its log when the level includes Info.
+Each run adds its own card, and earlier cards stay in the list. The status word is the card title, colored from the result theme, with the script name beside it. The log sits in that card, under the title, and it renders the failure markup. ERROR and WARNING labels in that log take their colors from the result theme. A failure line is a link to that script. A failure's log is included. A pass includes its log when the level includes Info. The Result column takes its colors from the panel theme.
 
 ## Clear Results
 
@@ -38,4 +38,4 @@ Opens the options resource in the Inspector. Level lists every ceiling, from Sil
 
 The button on a row runs that script. A click on a script name selects that file in the FileSystem dock.
 
-A right-click on a case, or on a heading that contains cases, opens the Run As menu.
+A right-click on a script, or on a folder, opens the Run As menu. EditorScript runs the scripts under that row. Play and Headless still launch the case scripts.

@@ -31,10 +31,6 @@ const FOLDER_OPEN = preload('../res/folder-open.svg')
 const MEDAL = preload('../res/medal.tres')
 const SKULL = preload('../res/skull.svg')
 
-const color_OK_bright = Color.GREEN_YELLOW
-const color_FAILURE_bright = Color.TOMATO
-const color_WARNING_bright = Color.GOLD
-
 
 # ██████  ██████   ██████  ██████  ███████ ██████  ████████ ██ ███████ ███████ #
 # ██   ██ ██   ██ ██    ██ ██   ██ ██      ██   ██    ██    ██ ██      ██      #
@@ -86,6 +82,9 @@ var _service:Node = null
 var _run_menu: CaseMenu
 var _case_popup: PopupMenu
 
+## File rows captured when Run As opened. EditorScript walks this list.
+var _pending_rows:Array[TreeItem] = []
+
 ## Dock walks inside process_selection. The menu counter can hit zero early.
 var _walks: int = 0
 ## Cancel for a dock walk. The case menu keeps its own halt flag.
@@ -128,18 +127,11 @@ func _on_run_pressed() -> void:
 		await process_selection()
 		return
 
-	var case_paths := PackedStringArray()
-	var any_row := false
-	for file_item:TreeItem in _selection_files():
-		any_row = true
-		var path:String = _row_path( file_item )
-		if not CaseSession.is_case_path( path ):
-			continue
-		if case_paths.append( path ):
-			push_error( "main_panel._on_run_pressed: append failed" )
-			return
-	if not any_row:
+	var files := _selection_files()
+	if files.is_empty():
 		return
+	_pending_rows = files
+	var case_paths := _case_paths_of( files )
 	# EditorScript runs the rows. Play and Headless still use the case paths.
 	if not _show_run_menu( case_paths, _run_menu_origin(), true ):
 		return
@@ -276,15 +268,14 @@ func _on_tests_tree_gui_input(event: InputEvent) -> void:
 func _popup_case_menu( item:TreeItem, at:Vector2 ) -> void:
 	if not Engine.is_editor_hint():
 		return
-	var path:String = _row_path( item )
-	if path.is_empty():
+	if not is_instance_valid( item ):
 		return
-
-	var paths := PackedStringArray()
-	if paths.append( path ):
-		push_error( "main_panel._popup_case_menu: append failed" )
+	var files := _file_items_under( item )
+	if files.is_empty():
 		return
-	if not _show_run_menu( paths, at ):
+	_pending_rows = files
+	# EditorScript runs these rows. Play and Headless still use the case paths.
+	if not _show_run_menu( _case_paths_of( files ), at, true ):
 		return
 
 
@@ -300,8 +291,13 @@ func _show_run_menu( paths:PackedStringArray, at:Vector2, run_rows:bool = false 
 	if popup == null:
 		return false
 
-	if is_instance_valid( _case_popup ):
-		_case_popup.queue_free()
+	# A hide from the menu we are replacing must not free the one just opened.
+	var previous:PopupMenu = _case_popup
+	_case_popup = null
+	if is_instance_valid( previous ):
+		if previous.popup_hide.is_connected( _on_case_popup_hide ):
+			previous.popup_hide.disconnect( _on_case_popup_hide )
+		previous.queue_free()
 	_case_popup = popup
 	add_child( popup )
 	popup.popup( Rect2i( Vector2i( at ), Vector2i.ZERO ) )
@@ -467,10 +463,16 @@ func create_info( file_item:TreeItem ) -> Control:
 
 
 func _run_rows_as_editor( _paths:PackedStringArray ) -> void:
-	await process_selection()
+	var rows:Array[TreeItem] = []
+	rows.assign( _pending_rows )
+	await _walk_rows( rows )
 
 
 func process_selection() -> void:
+	await _walk_rows( _selection_files() )
+
+
+func _walk_rows( rows:Array[TreeItem] ) -> void:
 	_walks += 1
 	CaseMenu.begin_set()
 	_apply_run_button()
@@ -478,9 +480,11 @@ func process_selection() -> void:
 	var scene_tree:SceneTree = get_tree()
 	if scene_tree != null:
 		await scene_tree.process_frame
-	for file_item:TreeItem in _selection_files():
+	for file_item:TreeItem in rows:
 		if _halt_walk or CaseMenu.halt_set:
 			break
+		if not is_instance_valid( file_item ):
+			continue
 		# The menu counter can drop after one script. This walk is still open.
 		_apply_run_button()
 		await process_test( file_item )
@@ -496,13 +500,44 @@ func _selection_files() -> Array[TreeItem]:
 	var root:TreeItem = tests_tree.get_root()
 	if root == null:
 		return files
-	var selection:Array = test_selection.keys()
+	var selection:Array[TreeItem] = _live_selection()
 	if selection.is_empty() or root in selection:
 		selection = root.get_children()
 	for item:TreeItem in selection:
+		if not is_instance_valid( item ):
+			continue
 		for file_item:TreeItem in _file_items_under( item ):
 			files.append( file_item )
 	return files
+
+
+## Drop keys whose rows were freed when the tree was rebuilt.
+func _live_selection() -> Array[TreeItem]:
+	var live:Array[TreeItem] = []
+	var stale:Array = []
+	for key:Variant in test_selection.keys():
+		if not is_instance_valid( key ):
+			stale.append( key )
+			continue
+		var row:TreeItem = key
+		live.append( row )
+	for key:Variant in stale:
+		test_selection.erase( key )
+	return live
+
+
+func _case_paths_of( files:Array[TreeItem] ) -> PackedStringArray:
+	var case_paths := PackedStringArray()
+	for file_item:TreeItem in files:
+		if not is_instance_valid( file_item ):
+			continue
+		var path:String = _row_path( file_item )
+		if not CaseSession.is_case_path( path ):
+			continue
+		if case_paths.append( path ):
+			push_error( "main_panel._case_paths_of: append failed" )
+			break
+	return case_paths
 
 
 
@@ -862,7 +897,9 @@ func regenerate_tree() -> void:
 	# re-build the test dictionary
 	test_list = collect_tests( test_path )
 
-	# Clear the old tree
+	# Rows are about to be freed. Selection keys must not outlive them.
+	test_selection.clear()
+	_pending_rows.clear()
 	tests_tree.clear()
 
 	# Add the column headers
@@ -886,26 +923,17 @@ func regenerate_tree() -> void:
 
 
 func _status_font_color( label:String ) -> Color:
-	var theme_name := &"font_color"
-	var fallback := Color.WHITE
+	var item := &"font_color"
 	match label:
 		"OK":
-			theme_name = &"success_color"
-			fallback = color_OK_bright
+			item = &"result_ok"
 		"WARNING":
-			theme_name = &"warning_color"
-			fallback = color_WARNING_bright
+			item = &"result_warning"
 		"FAILED":
-			theme_name = &"error_color"
-			fallback = color_FAILURE_bright
+			item = &"result_failed"
 		"INPROGRESS":
-			theme_name = &"accent_color"
-			fallback = Color(0.45, 0.65, 1.0)
-	if Engine.is_editor_hint():
-		var editor_theme := EditorInterface.get_editor_theme()
-		if editor_theme != null and editor_theme.has_color( theme_name, &"Editor" ):
-			return editor_theme.get_color( theme_name, &"Editor" )
-	return fallback
+			item = &"result_progress"
+	return tests_tree.get_theme_color( item )
 
 
 func update_tree_item( item:TreeItem, label:String = "PENDING" ) -> void:
@@ -952,6 +980,7 @@ func _on_tree_collapsed( _item:TreeItem ) -> void:
 
 
 ## Tree paints a custom background over the selection style, so the stripe stays a theme color.
+## Column 0 stops short of the Result column, so the same tint is painted there too.
 func _stripe_tree() -> void:
 	if tests_tree == null:
 		return
@@ -970,9 +999,10 @@ func _stripe_item( item:TreeItem, tint:Color, index:Array[int] ) -> void:
 	index[0] = n + 1
 	if n % 2 == 1:
 		item.set_custom_bg_color( 0, tint )
+		item.set_custom_bg_color( 1, tint )
 	else:
 		item.clear_custom_bg_color( 0 )
-	item.clear_custom_bg_color( 1 )
+		item.clear_custom_bg_color( 1 )
 	if item.collapsed:
 		return
 	for child:TreeItem in item.get_children():

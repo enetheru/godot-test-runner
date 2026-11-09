@@ -446,6 +446,12 @@ func _profiler_message(text:String) -> void:
 	hooks.message(text)
 
 
+func _note_fail( msg:String ) -> void:
+	var block := msg if msg.ends_with( "\n" ) else msg + "\n"
+	output.append.call( block )
+	_emit_rich( block )
+
+
 func _emit_rich( msg:Variant ) -> void:
 	if not Log.allows( local_lvl, Log.Level.INFO ):
 		return
@@ -507,8 +513,7 @@ func _test_eq( want_v:Variant, got_v:Variant, desc:String = "" ) -> bool:
 		"[b][color=salmon]%s: '%s'[/color][/b]" % [Shared.get_call_site(3), desc],
 		"\twanted: '%s' == got: '%s'" % [want_v, got_v ]])
 	# TODO add the call_site to the error message.
-	output.append.call( msg )
-	_emit_rich( msg )
+	_note_fail( msg )
 	return false
 
 
@@ -531,8 +536,7 @@ func _test_approx( want_v:float, got_v:float, desc:String = "" ) -> bool:
 	var msg:String = '\n'.join([
 		"[b][color=salmon]%s: '%s'[/color][/b]" % [Shared.get_call_site(3), desc],
 		"\twanted: '%s' ~= got: '%s'" % [want_v, got_v ]])
-	output.append.call( msg )
-	_emit_rich( msg )
+	_note_fail( msg )
 	return false
 
 
@@ -556,8 +560,7 @@ func _test_true( value:Variant, desc:String = "" ) -> bool:
 		"[b][color=salmon]%s: '%s'[/color][/b]" % [Shared.get_call_site(3), desc],
 		"\twanted: true | value != (0 & null)",
 		"\tgot: '%s'" % value])
-	output.append.call( msg )
-	_emit_rich( msg )
+	_note_fail( msg )
 	return false
 
 
@@ -581,8 +584,7 @@ func _test_false( value:Variant, desc:String = "" ) -> bool:
 		"[b][color=salmon]%s: '%s'[/color][/b]" % [Shared.get_call_site(3), desc],
 		"\twanted: false | value == (0 & null)",
 		"\tgot: '%s'" % value])
-	output.append.call( msg )
-	_emit_rich( msg )
+	_note_fail( msg )
 	return false
 
 
@@ -614,8 +616,7 @@ func _test_op( val1:Variant, op:int, val2:Variant, desc:String = ""  ) -> bool:
 	var msg:String = '\n'.join([
 		"[b][color=salmon]%s: '%s'[/color][/b]" % [Shared.get_call_site(3), desc],
 		"\tOp: ('%s' %s '%s') is false" % [val1, op_string[op], val2]])
-	output.append.call( msg )
-	_emit_rich( msg )
+	_note_fail( msg )
 	return false
 
 
