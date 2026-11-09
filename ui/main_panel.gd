@@ -53,7 +53,6 @@ func                        ________PROPERTIES_______              ()->void:pass
 @onready var run_btn: Button = $Buttons/Left/Run
 @onready var reload_btn: Button = $Buttons/Left/Reload
 @onready var filters_btn: Button = $Buttons/Left/Filters
-@onready var folder_btn: Button = $Buttons/Left/Folder
 
 # Top Row Center
 @onready var stats_counter: RichTextLabel = $Buttons/Center/StatsCounter
@@ -121,10 +120,6 @@ func _on_reload_pressed() -> void:
 
 
 func _on_filters_pressed() -> void:
-	pass # Replace with function body.
-
-
-func _on_folder_pressed() -> void:
 	pass # Replace with function body.
 
 

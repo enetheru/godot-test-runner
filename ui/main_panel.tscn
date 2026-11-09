@@ -2,7 +2,6 @@
 
 [ext_resource type="Script" uid="uid://d2kuss1cr4mg" path="res://addons/enetheru.test-runner/ui/main_panel.gd" id="1_alnk0"]
 [ext_resource type="Texture2D" uid="uid://c3w4bod4en2gx" path="res://addons/enetheru.test-runner/res/run-all.svg" id="2_73jry"]
-[ext_resource type="Texture2D" uid="uid://cjnyuuf58npol" path="res://addons/enetheru.test-runner/res/folder-cog.svg" id="3_4mcxl"]
 [ext_resource type="Texture2D" uid="uid://ixnh31np28ok" path="res://addons/enetheru.test-runner/res/filter-cog.svg" id="4_ub16m"]
 [ext_resource type="Texture2D" uid="uid://c5mjw61j4wra4" path="res://addons/enetheru.test-runner/res/folder-sync.svg" id="5_k3utk"]
 [ext_resource type="Texture2D" uid="uid://clvd7lgq1sdn3" path="res://addons/enetheru.test-runner/res/trash-can.svg" id="6_blb3b"]
@@ -52,12 +51,6 @@ icon = ExtResource("5_k3utk")
 layout_mode = 2
 text = "Filters"
 icon = ExtResource("4_ub16m")
-
-[node name="Folder" type="Button" parent="Buttons/Left" unique_id=900684212]
-layout_mode = 2
-theme_override_constants/icon_max_width = 24
-text = "Folder"
-icon = ExtResource("3_4mcxl")
 
 [node name="Center" type="HBoxContainer" parent="Buttons" unique_id=39480746]
 layout_mode = 2
@@ -184,7 +177,6 @@ autowrap_mode = 0
 [connection signal="pressed" from="Buttons/Left/Run" to="." method="_on_run_pressed"]
 [connection signal="pressed" from="Buttons/Left/Reload" to="." method="_on_reload_pressed"]
 [connection signal="pressed" from="Buttons/Left/Filters" to="." method="_on_filters_pressed"]
-[connection signal="pressed" from="Buttons/Left/Folder" to="." method="_on_folder_pressed"]
 [connection signal="toggled" from="Buttons/Right/Tracy" to="." method="_on_tracy_toggled"]
 [connection signal="item_selected" from="Buttons/Right/Level" to="." method="_on_lvl_selected"]
 [connection signal="pressed" from="Buttons/Right/ClearResults" to="." method="_on_clear_results_pressed"]
