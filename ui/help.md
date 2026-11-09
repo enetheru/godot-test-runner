@@ -2,9 +2,13 @@
 
 This panel runs the test scripts under the tests folder and the case scripts under the cases folder. Those folders are tests_dir and cases_dir in the project settings.
 
-## Run
+## Play
 
-Opens the Run As menu for the selected cases. An empty selection offers every case still on screen.
+The button reads Play while the list is idle, and it opens the Run As menu. An empty selection uses every row still on screen. A selection uses those rows.
+
+EditorScript runs those rows in this editor, one script at a time, and writes each result into the list. Test scripts and case scripts both run this way. During that walk the button reads Cancel. The script already running finishes, and Cancel drops the later scripts. Once pressed, the button reads Cancelling and stays inactive until the walk ends, then it reads Play again.
+
+The menu's Play item and Headless launch the case scripts as their own run. Outside the editor, the same button starts that walk directly.
 
 ## Reload Tests
 

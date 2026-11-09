@@ -35,8 +35,8 @@ theme_override_colors/icon_hover_color = Color(1, 1, 1, 1)
 theme_override_colors/icon_hover_pressed_color = Color(1, 1, 1, 1)
 theme_override_colors/icon_disabled_color = Color(1, 1, 1, 1)
 theme_override_constants/icon_max_width = 24
-text = "Run
-"
+tooltip_text = "Open the Run As menu for the rows on screen."
+text = "Play"
 icon = ExtResource("2_73jry")
 
 [node name="Reload" type="Button" parent="Buttons/Left" unique_id=1687762899]

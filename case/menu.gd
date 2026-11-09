@@ -31,6 +31,16 @@ var slot: EditorContextMenuPlugin.ContextMenuSlot = EditorContextMenuPlugin.CONT
 var _live: CaseSession
 var _picked: PackedStringArray = PackedStringArray()
 
+## When set, the EditorScript item awaits this instead of the case walk.
+## The argument is the picked case paths.
+var editor_runner: Callable
+
+## Set while a sequential set should stop after the script already running.
+static var halt_set: bool = false
+static var set_count: int = 0
+## Panel passes a bool: true while at least one set is walking.
+static var set_changed: Callable
+
 
 #             ███████ ██    ██ ███████ ███    ██ ████████ ███████              #
 #             ██      ██    ██ ██      ████   ██    ██    ██                   #
@@ -43,7 +53,10 @@ func _on_method( id: int ) -> void:
 	var paths := _picked.duplicate()
 	match id:
 		CaseSession.Host.EDITOR:
-			await _run_editor( paths )
+			if editor_runner.is_valid():
+				await editor_runner.call( paths )
+			else:
+				await _run_editor( paths )
 		CaseSession.Host.SCRIPT:
 			_run_script_host( paths )
 
@@ -80,10 +93,24 @@ func _popup_menu( paths: PackedStringArray ) -> void:
 #         ██      ██ ███████    ██    ██   ██  ██████  ██████  ███████         #
 func                        _________METHODS_________              ()->void:pass
 
+static func begin_set() -> void:
+	set_count += 1
+	_emit_set_changed()
+
+
+static func end_set() -> void:
+	set_count = maxi( set_count - 1, 0 )
+	if set_count == 0:
+		halt_set = false
+	_emit_set_changed()
+
+
 func make_run_menu( paths: PackedStringArray, title: String = "" ) -> PopupMenu:
 	var cases := _case_paths_in( paths )
 	if cases.is_empty():
-		return null
+		if not editor_runner.is_valid():
+			return null
+		return _editor_item_menu( title )
 
 	_picked = cases
 	var popup := PopupMenu.new()
@@ -141,9 +168,29 @@ func run_script( scr: Script ) -> void:
 #       ██ ██   ████    ██    ███████ ██   ██ ██   ████ ██   ██ ███████        #
 func                        ________INTERNAL_________              ()->void:pass
 
+func _editor_item_menu( title: String ) -> PopupMenu:
+	var popup := PopupMenu.new()
+	if not title.is_empty():
+		popup.add_separator( title )
+	popup.add_item( "EditorScript", CaseSession.Host.EDITOR )
+	var err := popup.id_pressed.connect( _on_method )
+	if err != OK:
+		push_error( "menu._editor_item_menu: connect failed (%s)" % error_string( err ) )
+	return popup
+
+
 func _run_editor( paths: PackedStringArray ) -> void:
+	begin_set()
 	for path: String in paths:
+		if halt_set:
+			break
 		await run_path( path )
+	end_set()
+
+
+static func _emit_set_changed() -> void:
+	if set_changed.is_valid():
+		set_changed.call( set_count > 0 )
 
 
 func _run_play( paths: PackedStringArray ) -> void:

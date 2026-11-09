@@ -55,6 +55,8 @@ func                        ________PROPERTIES_______              ()->void:pass
 @onready var run_btn: Button = $Buttons/Left/Run
 @onready var reload_btn: Button = $Buttons/Left/Reload
 
+var _play_icon: Texture2D
+
 # Top Row Center
 @onready var stats_counter: RichTextLabel = $Buttons/Center/StatsCounter
 # Top Row Right
@@ -113,22 +115,53 @@ var already_updating:bool = false
 func                        __________EVENTS_________              ()->void:pass
 
 func _on_run_pressed() -> void:
+	if CaseMenu.set_count > 0:
+		if CaseMenu.halt_set:
+			return
+		CaseMenu.halt_set = true
+		_on_set_changed( true )
+		return
+
 	# Outside the editor there is no Run As menu, so the rows run here.
 	if not Engine.is_editor_hint():
-		for file_item:TreeItem in _selection_files():
-			await process_test( file_item )
+		await process_selection()
 		return
 
 	var case_paths := PackedStringArray()
+	var any_row := false
 	for file_item:TreeItem in _selection_files():
+		any_row = true
 		var path:String = _row_path( file_item )
 		if not CaseSession.is_case_path( path ):
 			continue
 		if case_paths.append( path ):
 			push_error( "main_panel._on_run_pressed: append failed" )
 			return
-	if not _show_run_menu( case_paths, _run_menu_origin() ):
+	if not any_row:
 		return
+	# EditorScript runs the rows. Play and Headless still use the case paths.
+	if not _show_run_menu( case_paths, _run_menu_origin(), true ):
+		return
+
+
+func _on_set_changed( active: bool ) -> void:
+	var cancelling: bool = active and CaseMenu.halt_set
+	if cancelling:
+		run_btn.text = "Cancelling"
+		run_btn.icon = null
+		run_btn.disabled = true
+		run_btn.tooltip_text = "The current script is still finishing."
+		return
+	if active:
+		run_btn.text = "Cancel"
+		run_btn.icon = null
+		run_btn.disabled = false
+		run_btn.tooltip_text = "After the current script finishes, leave the rest of the set unrun."
+		return
+	run_btn.text = "Play"
+	run_btn.icon = _play_icon
+	run_btn.disabled = false
+	run_btn.tooltip_text = "Open the Run As menu for the rows on screen."
 
 
 func _on_reload_pressed() -> void:
@@ -247,11 +280,14 @@ func _popup_case_menu( item:TreeItem, at:Vector2 ) -> void:
 		return
 
 
-func _show_run_menu( paths:PackedStringArray, at:Vector2 ) -> bool:
-	if not Engine.is_editor_hint() or paths.is_empty():
+func _show_run_menu( paths:PackedStringArray, at:Vector2, run_rows:bool = false ) -> bool:
+	if not Engine.is_editor_hint():
 		return false
 	if _run_menu == null:
 		_run_menu = CaseMenu.new()
+	_run_menu.editor_runner = _run_rows_as_editor if run_rows else Callable()
+	if paths.is_empty() and not run_rows:
+		return false
 	var popup:PopupMenu = _run_menu.make_run_menu( paths, "Run As" )
 	if popup == null:
 		return false
@@ -300,6 +336,9 @@ func _ready() -> void:
 		@warning_ignore( "return_value_discarded" )
 		opts.changed.connect( _on_opts_changed )
 	_apply_opts()
+	_play_icon = run_btn.icon
+	CaseMenu.set_changed = _on_set_changed
+	_on_set_changed( CaseMenu.set_count > 0 )
 	_on_reload_pressed()
 
 
@@ -307,6 +346,8 @@ func _exit_tree() -> void:
 	if opts != null \
 	and opts.changed.is_connected( _on_opts_changed ):
 		opts.changed.disconnect( _on_opts_changed )
+	if CaseMenu.set_changed == _on_set_changed:
+		CaseMenu.set_changed = Callable()
 
 
 #         ███    ███ ███████ ████████ ██   ██  ██████  ██████  ███████         #
@@ -396,9 +437,21 @@ func create_info( file_item:TreeItem ) -> Control:
 	return info_box
 
 
+func _run_rows_as_editor( _paths:PackedStringArray ) -> void:
+	await process_selection()
+
+
 func process_selection() -> void:
+	CaseMenu.begin_set()
+	# One frame so Cancel paints before the first script, and a click can land.
+	var scene_tree:SceneTree = get_tree()
+	if scene_tree != null:
+		await scene_tree.process_frame
 	for file_item:TreeItem in _selection_files():
+		if CaseMenu.halt_set:
+			break
 		await process_test( file_item )
+	CaseMenu.end_set()
 
 
 func _selection_files() -> Array[TreeItem]:
