@@ -4,11 +4,11 @@ This panel runs the test scripts under the tests folder and the case scripts und
 
 ## Play
 
-The button reads Play while the list is idle, and it opens the Run As menu. An empty selection uses every row still on screen. A selection uses those rows.
+The button reads Play while the list is idle. It starts every run checked in the menu after Reload, one run after another. An empty selection uses every row still on screen. A selection uses those rows.
 
 EditorScript runs those rows in this editor, one script at a time, and writes each result into the list. Test scripts and case scripts both run this way. During that walk the button reads Cancel. The script already running finishes, and Cancel drops the later scripts. Once pressed, the button reads Cancelling and stays inactive until the walk ends, then it reads Play again.
 
-The menu's Play item and Headless launch the case scripts as their own run. Outside the editor, the same button starts that walk directly.
+Play Editor, Play template_debug, Play template_release, and Headless launch the case scripts. Several checked runs all start. Outside the editor, the same button starts the editor walk directly.
 
 ## Reload Tests
 
@@ -16,7 +16,7 @@ Scans the folders again and rebuilds the list.
 
 ## Filter
 
-Matches row names, and it ignores case. A word matches anywhere in the name. `*` matches any stretch of text, and `?` matches one character. A matching folder name shows that folder's rows. Run uses the rows still on screen.
+Matches row names, and it ignores case. A word matches anywhere in the name. `*` matches any stretch of text, and `?` matches one character. A matching folder name shows that folder's rows. The run menu after Reload also filters the list: a row stays when one checked run can start it. Test scripts stay while EditorScript is checked. Case scripts stay for EditorScript and for Play. A case that needs a scene tree stays off the list when Headless is the only checked run. Run uses the rows still on screen.
 
 ## Counts
 

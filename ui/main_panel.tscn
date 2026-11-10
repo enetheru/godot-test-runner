@@ -35,7 +35,7 @@ theme_override_colors/icon_hover_color = Color(1, 1, 1, 1)
 theme_override_colors/icon_hover_pressed_color = Color(1, 1, 1, 1)
 theme_override_colors/icon_disabled_color = Color(1, 1, 1, 1)
 theme_override_constants/icon_max_width = 24
-tooltip_text = "Open the Run As menu for the rows on screen."
+tooltip_text = "Start the checked runs for the rows on screen."
 text = "Play"
 icon = ExtResource("2_73jry")
 
@@ -45,6 +45,12 @@ theme_override_constants/icon_max_width = 24
 text = "Reload Tests
 "
 icon = ExtResource("5_k3utk")
+
+[node name="RunKind" type="MenuButton" parent="Buttons/Left"]
+layout_mode = 2
+tooltip_text = "Checked runs start from Play. The list shows the rows those runs can start."
+text = "EditorScript"
+switch_on_hover = false
 
 [node name="Right" type="HBoxContainer" parent="Buttons" unique_id=726647946]
 layout_mode = 2

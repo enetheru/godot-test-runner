@@ -22,6 +22,10 @@ const RetCode = Shared.RetCode
 const INFO_BOX = preload('info_box.tscn')
 const HELP_PATH:String = "res://addons/enetheru.test-runner/ui/help.md"
 
+const KIND_CASE := 1
+const KIND_TREE := 2
+const KIND_EDITOR := 4
+
 # Resources
 # Icons
 const DEBUG_RERUN = preload('../res/debug-rerun.svg')
@@ -41,6 +45,7 @@ func                        ________PROPERTIES_______              ()->void:pass
 
 # Top Row Left
 @onready var run_btn: Button = $Buttons/Left/Run
+@onready var run_kind: MenuButton = $Buttons/Left/RunKind
 @onready var reload_btn: Button = $Buttons/Left/Reload
 
 var _play_icon: Texture2D
@@ -85,6 +90,9 @@ var _case_popup: PopupMenu
 ## File rows captured when Run As opened. EditorScript walks this list.
 var _pending_rows:Array[TreeItem] = []
 
+## path -> case / needs-tree / editor-only bits. Cleared when the tree rebuilds.
+var _row_kind:Dictionary[String, int] = {}
+
 ## Dock walks inside process_selection. The menu counter can hit zero early.
 var _walks: int = 0
 ## Cancel for a dock walk. The case menu keeps its own halt flag.
@@ -122,7 +130,7 @@ func _on_run_pressed() -> void:
 		_apply_run_button()
 		return
 
-	# Outside the editor there is no Run As menu, so the rows run here.
+	# Outside the editor the run menu is hidden, so the rows run here.
 	if not Engine.is_editor_hint():
 		await process_selection()
 		return
@@ -130,11 +138,23 @@ func _on_run_pressed() -> void:
 	var files := _selection_files()
 	if files.is_empty():
 		return
-	_pending_rows = files
-	var case_paths := _case_paths_of( files )
-	# EditorScript runs the rows. Play and Headless still use the case paths.
-	if not _show_run_menu( case_paths, _run_menu_origin(), true ):
+	var kinds:Array[int] = _checked_run_ids()
+	if kinds.is_empty():
 		return
+	_pending_rows = files
+	for kind_id:int in kinds:
+		if _halt_walk or CaseMenu.halt_set:
+			break
+		if kind_id == CaseSession.Host.EDITOR:
+			if await _walk_rows( files ):
+				break
+			continue
+		var paths:PackedStringArray = _paths_for_kind( kind_id, files )
+		if paths.is_empty():
+			continue
+		if _run_menu == null:
+			_run_menu = CaseMenu.new()
+		_run_menu.launch( kind_id, paths )
 
 
 func _on_set_changed( _active: bool ) -> void:
@@ -146,6 +166,8 @@ func _apply_run_button() -> void:
 		return
 	var active: bool = _walks > 0 or CaseMenu.set_count > 0
 	var cancelling: bool = active and ( ( _walks > 0 and _halt_walk ) or CaseMenu.halt_set )
+	if run_kind != null:
+		run_kind.disabled = active
 	if cancelling:
 		run_btn.text = "Cancelling"
 		run_btn.icon = null
@@ -158,10 +180,11 @@ func _apply_run_button() -> void:
 		run_btn.disabled = false
 		run_btn.tooltip_text = "After the current script finishes, leave the rest of the set unrun."
 		return
+	var picking:bool = Engine.is_editor_hint() and _checked_run_ids().is_empty()
 	run_btn.text = "Play"
 	run_btn.icon = _play_icon
-	run_btn.disabled = false
-	run_btn.tooltip_text = "Open the Run As menu for the rows on screen."
+	run_btn.disabled = picking
+	run_btn.tooltip_text = "Check a run in the menu." if picking else "Start the checked runs for the rows on screen."
 
 
 func _on_reload_pressed() -> void:
@@ -307,10 +330,6 @@ func _show_run_menu( paths:PackedStringArray, at:Vector2, run_rows:bool = false 
 	return true
 
 
-func _run_menu_origin() -> Vector2:
-	return run_btn.global_position + Vector2( 0, run_btn.size.y )
-
-
 func _on_case_popup_hide() -> void:
 	if is_instance_valid( _case_popup ):
 		_case_popup.queue_free()
@@ -350,6 +369,7 @@ func _ready() -> void:
 	_play_icon = run_btn.icon
 	CaseMenu.set_changed = _on_set_changed
 	_on_set_changed( CaseMenu.set_count > 0 )
+	_build_run_kinds()
 	if not tests_tree.item_collapsed.is_connected( _on_tree_collapsed ):
 		@warning_ignore( "return_value_discarded" )
 		tests_tree.item_collapsed.connect( _on_tree_collapsed )
@@ -364,6 +384,9 @@ func _exit_tree() -> void:
 		CaseMenu.set_changed = Callable()
 	if tests_tree != null and tests_tree.item_collapsed.is_connected( _on_tree_collapsed ):
 		tests_tree.item_collapsed.disconnect( _on_tree_collapsed )
+	if is_instance_valid( run_kind ) \
+	and run_kind.get_popup().index_pressed.is_connected( _on_run_kind_index_pressed ):
+		run_kind.get_popup().index_pressed.disconnect( _on_run_kind_index_pressed )
 
 
 #         ███    ███ ███████ ████████ ██   ██  ██████  ██████  ███████         #
@@ -472,7 +495,8 @@ func process_selection() -> void:
 	await _walk_rows( _selection_files() )
 
 
-func _walk_rows( rows:Array[TreeItem] ) -> void:
+## True when Cancel stopped this walk. Later checked runs stay unstarted.
+func _walk_rows( rows:Array[TreeItem] ) -> bool:
 	_walks += 1
 	CaseMenu.begin_set()
 	_apply_run_button()
@@ -480,8 +504,10 @@ func _walk_rows( rows:Array[TreeItem] ) -> void:
 	var scene_tree:SceneTree = get_tree()
 	if scene_tree != null:
 		await scene_tree.process_frame
+	var stopped := false
 	for file_item:TreeItem in rows:
 		if _halt_walk or CaseMenu.halt_set:
+			stopped = true
 			break
 		if not is_instance_valid( file_item ):
 			continue
@@ -493,6 +519,7 @@ func _walk_rows( rows:Array[TreeItem] ) -> void:
 		_halt_walk = false
 	CaseMenu.end_set()
 	_apply_run_button()
+	return stopped
 
 
 func _selection_files() -> Array[TreeItem]:
@@ -522,6 +549,7 @@ func _live_selection() -> Array[TreeItem]:
 		var row:TreeItem = key
 		live.append( row )
 	for key:Variant in stale:
+		@warning_ignore( "return_value_discarded" )
 		test_selection.erase( key )
 	return live
 
@@ -539,6 +567,132 @@ func _case_paths_of( files:Array[TreeItem] ) -> PackedStringArray:
 			break
 	return case_paths
 
+
+func _build_run_kinds() -> void:
+	if run_kind == null:
+		return
+	if not Engine.is_editor_hint():
+		run_kind.visible = false
+		return
+	var popup := run_kind.get_popup()
+	popup.clear()
+	# The menu draws the mark. It does not change it.
+	popup.hide_on_item_selection = false
+	popup.hide_on_checkable_item_selection = false
+	_add_run_kind( popup, "EditorScript", CaseSession.Host.EDITOR, true )
+	_add_run_kind( popup, "Play Editor", CaseMenu.PLAY_EDITOR, false )
+	_add_run_kind( popup, "Play template_debug", CaseMenu.PLAY_DEBUG, false )
+	_add_run_kind( popup, "Play template_release", CaseMenu.PLAY_RELEASE, false )
+	_add_run_kind( popup, "Headless -s", CaseSession.Host.SCRIPT, false )
+	if not popup.index_pressed.is_connected( _on_run_kind_index_pressed ):
+		var err:int = popup.index_pressed.connect( _on_run_kind_index_pressed )
+		if err != OK:
+			push_error( "main_panel._build_run_kinds: connect failed (%s)" % error_string( err ) )
+	_refresh_run_kind_title()
+	_apply_run_button()
+
+
+func _add_run_kind( popup:PopupMenu, label:String, id:int, on:bool ) -> void:
+	popup.add_item( label, id )
+	var index := popup.get_item_index( id )
+	popup.set_item_as_checkable( index, true )
+	popup.set_item_checked( index, on )
+
+
+func _on_run_kind_index_pressed( index:int ) -> void:
+	var popup := run_kind.get_popup()
+	popup.toggle_item_checked( index )
+
+	_refresh_run_kind_title()
+	_apply_list_filter( list_filter.text if list_filter != null else "" )
+	_apply_run_button()
+
+
+func _refresh_run_kind_title() -> void:
+	if run_kind == null:
+		return
+	var labels := PackedStringArray()
+	var popup := run_kind.get_popup()
+	for index:int in popup.item_count:
+		if not popup.is_item_checked( index ):
+			continue
+		if labels.append( popup.get_item_text( index ) ):
+			push_error( "main_panel._refresh_run_kind_title: append failed" )
+			break
+	if labels.is_empty():
+		run_kind.text = "No run"
+		return
+	if labels.size() == 1:
+		run_kind.text = labels[0]
+		return
+	run_kind.text = "%d runs" % labels.size()
+
+
+func _checked_run_ids() -> Array[int]:
+	var ids:Array[int] = []
+	if run_kind == null or not run_kind.visible:
+		return ids
+	var popup := run_kind.get_popup()
+	for index:int in popup.item_count:
+		if popup.is_item_checked( index ):
+			ids.append( popup.get_item_id( index ) )
+	return ids
+
+
+func _paths_for_kind( kind_id:int, files:Array[TreeItem] ) -> PackedStringArray:
+	var paths := PackedStringArray()
+	for file_item:TreeItem in files:
+		if not is_instance_valid( file_item ):
+			continue
+		if not _kind_allows( kind_id, file_item ):
+			continue
+		var path:String = _row_path( file_item )
+		if path.is_empty():
+			continue
+		if paths.append( path ):
+			push_error( "main_panel._paths_for_kind: append failed" )
+			break
+	return paths
+
+
+## EditorScript starts every row. Play starts cases. Headless starts cases with no tree.
+func _host_allows( item:TreeItem ) -> bool:
+	if not Engine.is_editor_hint():
+		return true
+	for kind_id:int in _checked_run_ids():
+		if _kind_allows( kind_id, item ):
+			return true
+	return false
+
+
+func _kind_allows( kind_id:int, item:TreeItem ) -> bool:
+	if kind_id == CaseSession.Host.EDITOR:
+		return true
+	var flags:int = _row_flags( _row_path( item ) )
+	if ( flags & KIND_CASE ) == 0:
+		return false
+	if kind_id == CaseSession.Host.SCRIPT:
+		return ( flags & KIND_TREE ) == 0 and ( flags & KIND_EDITOR ) == 0
+	return ( flags & KIND_EDITOR ) == 0
+
+
+func _row_flags( path:String ) -> int:
+	if path.is_empty():
+		return 0
+	if _row_kind.has( path ):
+		return _row_kind[path]
+	var flags := 0
+	if CaseSession.is_case_path( path ):
+		flags |= KIND_CASE
+		var loaded:Resource = load( path )
+		if loaded is Script:
+			var scr:Script = loaded
+			if CaseSession.script_flag( scr, "NEEDS_TREE" ):
+				flags |= KIND_TREE
+			if CaseSession.script_flag( scr, "EDITOR_ONLY" ):
+				flags |= KIND_EDITOR
+	_row_kind[path] = flags
+	return flags
 
 
 func process_test( file_item:TreeItem ) -> void:
@@ -861,8 +1015,7 @@ func add_action_row(
 			parent_item:TreeItem
 			) -> void:
 	var item:TreeItem = parent_item.create_child()
-	# Test Name
-	item.set_selectable(0, false )
+	# Test Name. Column 0 stays selectable, same as a folder.
 	item.set_metadata(0, test_def )
 	item.set_text( 0, filename )
 	# Result
@@ -895,6 +1048,7 @@ func _fit_result_column() -> void:
 
 func regenerate_tree() -> void:
 	# re-build the test dictionary
+	_row_kind.clear()
 	test_list = collect_tests( test_path )
 
 	# Rows are about to be freed. Selection keys must not outlive them.
@@ -1027,35 +1181,40 @@ func _filter_item( item:TreeItem, glob:String ) -> bool:
 			any_child = _filter_item( child, glob ) or any_child
 		item.visible = true
 		return any_child
-	if glob.is_empty():
-		_set_all_visible( item )
-		return true
-	if not _is_file_item( item ) and item.get_text( 0 ).matchn( glob ):
-		item.visible = true
-		item.collapsed = false
-		for child:TreeItem in item.get_children():
-			_show_branch( child )
-		return true
+	if _is_file_item( item ):
+		var named:bool = glob.is_empty() or item.get_text( 0 ).matchn( glob )
+		var allowed:bool = named and _host_allows( item )
+		item.visible = allowed
+		return allowed
+
+	# A matching folder name shows the rows that checked run can start.
+	if not glob.is_empty() and item.get_text( 0 ).matchn( glob ):
+		var named_hit:bool = _filter_branch_hosts( item )
+		item.visible = named_hit
+		if named_hit:
+			item.collapsed = false
+		return named_hit
 
 	var child_hit:bool = false
 	for child:TreeItem in item.get_children():
 		child_hit = _filter_item( child, glob ) or child_hit
-	var keep:bool = child_hit or item.get_text( 0 ).matchn( glob )
-	item.visible = keep
-	if keep and item.get_child_count() > 0:
+	item.visible = child_hit
+	if child_hit and not glob.is_empty():
 		item.collapsed = false
-	return keep
+	return child_hit
 
 
-func _set_all_visible( item:TreeItem ) -> void:
-	item.visible = true
-	for child:TreeItem in item.get_children():
-		_set_all_visible( child )
-
-
-func _show_branch( item:TreeItem ) -> void:
-	item.visible = true
-	if item.get_child_count() > 0:
-		item.collapsed = false
-	for child:TreeItem in item.get_children():
-		_show_branch( child )
+func _filter_branch_hosts( folder:TreeItem ) -> bool:
+	var any_child:bool = false
+	for child:TreeItem in folder.get_children():
+		if _is_file_item( child ):
+			var allowed:bool = _host_allows( child )
+			child.visible = allowed
+			any_child = any_child or allowed
+			continue
+		var sub:bool = _filter_branch_hosts( child )
+		child.visible = sub
+		if sub:
+			child.collapsed = false
+		any_child = any_child or sub
+	return any_child

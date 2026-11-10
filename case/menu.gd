@@ -169,6 +169,19 @@ func run_script( scr: Script ) -> void:
 	_report()
 
 
+## Play targets and Headless. The panel walks EditorScript itself.
+func launch( id: int, paths: PackedStringArray ) -> void:
+	match id:
+		PLAY_EDITOR:
+			_run_play( paths )
+		PLAY_DEBUG:
+			_run_template( paths, true )
+		PLAY_RELEASE:
+			_run_template( paths, false )
+		CaseSession.Host.SCRIPT:
+			_run_script_host( paths )
+
+
 #       ██ ███    ██ ████████ ███████ ██████  ███    ██  █████  ██             #
 #       ██ ████   ██    ██    ██      ██   ██ ████   ██ ██   ██ ██             #
 #       ██ ██ ██  ██    ██    █████   ██████  ██ ██  ██ ███████ ██             #
