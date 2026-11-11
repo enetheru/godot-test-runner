@@ -549,22 +549,8 @@ func process_test( file_item:TreeItem ) -> void:
 	_tests_tree.paint_kind( file_item, TR_CaseSession.Launch.EDITORSCRIPT )
 	_tests_tree.set_status( file_item, TestTree.Status.INPROGRESS )
 
-	# Tests can be run three ways.
-	# 	1. Headless as EditorScript
-	# 	2. From the test runner as EditorScript
-	# 	3. In a game from the test runner as Node
-	# If the last, the script header needs to be re-written to extend Node.
-	# A case keeps its script. The session is the host.
+	# A case runs through the session. An editor-script test runs as itself.
 	var case_run:bool = TR_CaseSession.is_case_path( script_path )
-	if not case_run and not Engine.is_editor_hint():
-		script_path = re_write(script_path)
-		# If Script path fails
-		if script_path.is_empty():
-			result.retcode = RetCode.TEST_FAILED
-			result.output = ["Re-Writing the script for in-game testing failed."]
-			info_text = result.output.reduce(Shared.reducer_to_lines)
-			_finish_editor( file_item, script_path, result, info_box, info_text )
-			return
 
 	# Load up the script and run the test
 	var script:GDScript = load( script_path )
@@ -572,17 +558,10 @@ func process_test( file_item:TreeItem ) -> void:
 		result.output = ["Cannot instantiate '%s'" % script_path ]
 	elif case_run:
 		await run_case( script, result )
-	elif Engine.is_editor_hint():
-		var instance:TR_Base  = script.new()
-		if instance:await run_test_base( instance, result )
-
-	#Erase our alternate script file after we are done.
-	if not case_run and not Engine.is_editor_hint():
-		var err:Error = DirAccess.remove_absolute(script_path)
-		if err != OK:
-			var msg:String = error_string(err) + ": Failure to remove alternate script"
-			result.output.append(msg)
-			printerr( msg )
+	else:
+		var instance:TR_Base = script.new()
+		if instance:
+			await run_test_base( instance, result )
 
 	if Log.allows( _test_lvl, Log.Level.INFO ) \
 	or result.retcode == RetCode.TEST_FAILED:
@@ -625,45 +604,6 @@ func run_case( script:GDScript, result:TestResult ) -> void:
 	result.output = []
 	for row:String in session.line().split( "\n" ):
 		result.output.append( row )
-
-
-func re_write( orig_path:String) -> String:
-	var orig:Dictionary = {
-		"dir":orig_path.get_base_dir(),
-		"name":orig_path.get_file().get_basename()
-	}
-	var alt_path := "{dir}/{name}_alt.gd".format(orig)
-
-	var orig_file := FileAccess.open(orig_path, FileAccess.READ)
-	if not orig_file.is_open():
-		printerr("Failed to open file: ", orig_path)
-		return ""
-
-	# skip the first three lines.
-	for i:int in 3:
-		var _line:String = orig_file.get_line()
-
-	var alt_file := FileAccess.open( alt_path, FileAccess.WRITE)
-	var header_replacement:String = "# This script is modified automatically to work in play mode.
-extends PlayBase\n"
-	if not alt_file.store_string(header_replacement):
-		printerr( "Failed to write to script alternate")
-		orig_file.close()
-		alt_file.close()
-		return ""
-
-
-	while not orig_file.eof_reached():
-		var line:String = orig_file.get_line()
-		if not alt_file.store_string(line + "\n"):
-			printerr( "Failed to write to script alternate")
-			orig_file.close()
-			alt_file.close()
-			return ""
-
-	orig_file.close()
-	alt_file.close()
-	return alt_path
 
 
 ## Clear InfoBoxes + tree status; also clears service last-results when bound.
