@@ -1,8 +1,0 @@
-[gd_resource type="AtlasTexture" load_steps=2 format=3 uid="uid://buto46ta3chpg"]
-
-[ext_resource type="Texture2D" uid="uid://dlggpqoir1272" path="res://addons/test_runner/res/medals_vector.svg" id="1_6s4wi"]
-
-[resource]
-atlas = ExtResource("1_6s4wi")
-region = Rect2(300, 0, 40, 75)
-margin = Rect2(2, 2, 2, 2)

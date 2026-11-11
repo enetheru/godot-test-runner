@@ -22,18 +22,15 @@ const RetCode = Shared.RetCode
 const INFO_BOX = preload('info_box.tscn')
 const HELP_PATH:String = "res://addons/enetheru.test-runner/ui/help.md"
 
-const KIND_CASE := 1
-const KIND_TREE := 2
-const KIND_EDITOR := 4
+## Row bits. A case can also need a tree, or stay in the editor.
+enum RowKind {
+	CASE = 1,
+	TREE = 2,
+	EDITOR = 4,
+}
 
 # Resources
-# Icons
-const DEBUG_RERUN = preload('../res/debug-rerun.svg')
-const FILE_CODE = preload('../res/file-code.svg')
-const FOLDER_OPEN = preload('../res/folder-open.svg')
-
-const MEDAL = preload('../res/medal.tres')
-const SKULL = preload('../res/skull.svg')
+const Icons = preload( "../res/icons.tres" )
 
 
 # ██████  ██████   ██████  ██████  ███████ ██████  ████████ ██ ███████ ███████ #
@@ -669,11 +666,11 @@ func _kind_allows( kind_id:int, item:TreeItem ) -> bool:
 	if kind_id == CaseSession.Host.EDITOR:
 		return true
 	var flags:int = _row_flags( _row_path( item ) )
-	if ( flags & KIND_CASE ) == 0:
+	if ( flags & RowKind.CASE ) == 0:
 		return false
 	if kind_id == CaseSession.Host.SCRIPT:
-		return ( flags & KIND_TREE ) == 0 and ( flags & KIND_EDITOR ) == 0
-	return ( flags & KIND_EDITOR ) == 0
+		return ( flags & RowKind.TREE ) == 0 and ( flags & RowKind.EDITOR ) == 0
+	return ( flags & RowKind.EDITOR ) == 0
 
 
 func _row_flags( path:String ) -> int:
@@ -683,14 +680,14 @@ func _row_flags( path:String ) -> int:
 		return _row_kind[path]
 	var flags := 0
 	if CaseSession.is_case_path( path ):
-		flags |= KIND_CASE
+		flags |= RowKind.CASE
 		var loaded:Resource = load( path )
 		if loaded is Script:
 			var scr:Script = loaded
 			if CaseSession.script_flag( scr, "NEEDS_TREE" ):
-				flags |= KIND_TREE
+				flags |= RowKind.TREE
 			if CaseSession.script_flag( scr, "EDITOR_ONLY" ):
-				flags |= KIND_EDITOR
+				flags |= RowKind.EDITOR
 	_row_kind[path] = flags
 	return flags
 
@@ -1024,8 +1021,8 @@ func add_action_row(
 	item.set_text(1, "PENDING ")
 	item.set_expand_right(1, false)
 	item.set_text_overrun_behavior(1, TextServer.OVERRUN_TRIM_ELLIPSIS)
-	item.add_button(1, DEBUG_RERUN, -1, false, "[Re]Run Test Action" )
-	item.set_icon(0, FILE_CODE)
+	item.add_button(1, Icons.get_tex( &"DEBUG_RERUN" ), -1, false, "[Re]Run Test Action" )
+	item.set_icon(0, Icons.get_tex( &"FILE_CODE" ))
 
 
 func _fit_result_column() -> void:
@@ -1041,7 +1038,7 @@ func _fit_result_column() -> void:
 	var inner := tests_tree.get_theme_constant( &"inner_item_margin_left" ) \
 			+ tests_tree.get_theme_constant( &"inner_item_margin_right" )
 	var separation := tests_tree.get_theme_constant( &"h_separation" )
-	var width := widest + outline * 2 + DEBUG_RERUN.get_width() \
+	var width := widest + outline * 2 + Icons.get_tex( &"DEBUG_RERUN" ).get_width() \
 			+ button_margin + inner + separation
 	tests_tree.set_column_custom_minimum_width( 1, width )
 
@@ -1105,7 +1102,7 @@ func _add_folder_branch( test_def:TestDef, parent_item:TreeItem ) -> void:
 	folder_item.set_text( 0, test_def.name )
 	folder_item.set_metadata( 0, test_def )
 	folder_item.set_selectable( 1, false )
-	folder_item.set_icon( 0, FOLDER_OPEN )
+	folder_item.set_icon( 0, Icons.at_size( Icons.get_tex( &"FOLDER_OPEN" ), Vector2i( 16, 16 ) ) )
 	folder_item.set_icon_max_width( 0, 16 )
 	_add_folder_contents( test_def, folder_item )
 

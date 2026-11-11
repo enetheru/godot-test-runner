@@ -18,8 +18,8 @@ const _ExportPlugin = preload( "export_plugin.gd" )
 ## Command Server name
 const CS_OWNER:String = "enetheru.test-runner"
 
-## Icons
-const CHECKLIST = preload( "res/checklist.svg" )
+const Icons = preload( "res/icons.tres" )
+
 
 # ██████  ██████   ██████  ██████  ███████ ██████  ████████ ██ ███████ ███████ #
 # ██   ██ ██   ██ ██    ██ ██   ██ ██      ██   ██    ██    ██ ██      ██      #
@@ -147,7 +147,7 @@ func _get_plugin_name() -> String:
 
 
 func _get_plugin_icon() -> Texture2D:
-	return CHECKLIST
+	return Icons.get_tex( &"CHECKLIST" )
 
 
 #         ███    ███ ███████ ████████ ██   ██  ██████  ██████  ███████         #
@@ -160,6 +160,13 @@ func                        _________METHODS_________              ()->void:pass
 func get_test_runner_service() -> Node:
 	return service
 
+
+#       ██ ███    ██ ████████ ███████ ██████  ███    ██  █████  ██             #
+#       ██ ████   ██    ██    ██      ██   ██ ████   ██ ██   ██ ██             #
+#       ██ ██ ██  ██    ██    █████   ██████  ██ ██  ██ ███████ ██             #
+#       ██ ██  ██ ██    ██    ██      ██   ██ ██  ██ ██ ██   ██ ██             #
+#       ██ ██   ████    ██    ███████ ██   ██ ██   ████ ██   ██ ███████        #
+func                        ________INTERNAL_________              ()->void:pass
 
 func _add_case_menus() -> void:
 	_filesystem_menu = CaseMenu.new()
@@ -186,13 +193,6 @@ func _run_case_proof( path: String ) -> void:
 	await _filesystem_menu.run_path( path )
 	EditorInterface.get_base_control().get_tree().quit()
 
-
-#       ██ ███    ██ ████████ ███████ ██████  ███    ██  █████  ██             #
-#       ██ ████   ██    ██    ██      ██   ██ ████   ██ ██   ██ ██             #
-#       ██ ██ ██  ██    ██    █████   ██████  ██ ██  ██ ███████ ██             #
-#       ██ ██  ██ ██    ██    ██      ██   ██ ██  ██ ██ ██   ██ ██             #
-#       ██ ██   ████    ██    ███████ ██   ██ ██   ████ ██   ██ ███████        #
-func                        ________INTERNAL_________              ()->void:pass
 
 func _arm_headless_tests() -> void:
 	var fs := EditorInterface.get_resource_filesystem()
@@ -312,8 +312,6 @@ func _unregister_from_command_server() -> void:
 			_cs_plugin.call( &"unregister_owner", CS_OWNER )
 	_cs_plugin = null
 	_cs_reloaded_cb = Callable()
-
-
 
 
 func _apply_run_pause() -> void:

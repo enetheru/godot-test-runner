@@ -48,6 +48,8 @@ icon = ExtResource("5_k3utk")
 
 [node name="RunKind" type="MenuButton" parent="Buttons/Left"]
 layout_mode = 2
+flat = false
+theme_type_variation = &"Button"
 tooltip_text = "Checked runs start from Play. The list shows the rows those runs can start."
 text = "EditorScript"
 switch_on_hover = false

@@ -4,14 +4,8 @@
 
 [resource]
 script = ExtResource("1_opts")
-lvl = 0
-tracy = true
+python_exe = "C:/Users/nicho/AppData/Local/Programs/Python/Python314/python.exe"
 tracy_capture = "C:/git/wolfpld/tracy/capture/cmake-build-release-visual-studio/tracy-capture.exe"
 tracy_scripts = "C:/Godot/src/godot-private/misc/scripts/tracy"
-python_exe = "C:/Users/nicho/AppData/Local/Programs/Python/Python314/python.exe"
-tracy_pad_s = 0.10100000000000002
-tracy_pad_samples = 6
-template_debug = ""
-template_release = ""
-tests_dir = "res://tests"
-cases_dir = "res://cases"
+tracy_pad_s = 0.0094688667568608
+tracy_pad_samples = 32
