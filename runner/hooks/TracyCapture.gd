@@ -1,5 +1,5 @@
 @tool
-extends TR_Hooks
+extends TR_Hook
 
 ## Capture installed on [member TR_Base.hooks].
 ##

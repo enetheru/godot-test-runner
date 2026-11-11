@@ -1,6 +1,6 @@
 @tool
 @abstract
-class_name TR_Hooks
+class_name TR_Hook
 extends RefCounted
 
 ## Work around one test run.

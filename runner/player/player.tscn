@@ -1,0 +1,6 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" uid="uid://bkadon1f5s5jp" path="res://addons/enetheru.test-runner/runner/player/player.gd" id="1_player"]
+
+[node name="CasePlayer" type="Node"]
+script = ExtResource("1_player")

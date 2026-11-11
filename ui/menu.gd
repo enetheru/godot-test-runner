@@ -13,7 +13,7 @@ const CaseSessionScript = preload( "uid://blrcpfnrs606p" )
 const PlayPack = preload( "uid://bmt02dy5hnmht" )
 const TR_Opts = preload( "uid://c3rwpcm55iy6r" )
 
-const PLAYER_SCENE := "res://addons/enetheru.test-runner/runner/player.tscn"
+const PLAYER_SCENE := "res://addons/enetheru.test-runner/runner/player/player.tscn"
 const SCRIPT_HOST := "res://addons/enetheru.test-runner/runner/script_host.gd"
 
 

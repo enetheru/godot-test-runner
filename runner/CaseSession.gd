@@ -12,7 +12,7 @@ extends RefCounted
 ##
 ## Pass is 1 and fail is 0, matching [code]RetCode[/code]. A missing return
 ## stays a failure. This record owns the hooks. [method TR_Case._configure]
-## runs after the trait checks and before [method TR_Hooks.pre]. The clock
+## runs after the trait checks and before [method TR_Hook.pre]. The clock
 ## starts after pre, using [member budget_s]. A tree host installs
 ## [TracyCapture] after configure when hooks is still empty.
 ## [member capture_request] [code]0[/code] skips that install, [code]1[/code]
@@ -88,10 +88,10 @@ var path: String = ""
 ## this before [method TR_Case._configure]. That step may replace it.
 var budget_s: float = 5.0
 
-## Null skips [method TR_Hooks.pre] and [method TR_Hooks.post].
+## Null skips [method TR_Hook.pre] and [method TR_Hook.post].
 ## The host or [method TR_Case._configure] assigns it. The Tracy install
 ## fills it only when it is still null.
-var hooks: TR_Hooks
+var hooks: TR_Hook
 
 ## [code]-1[/code] honors the saved Tracy flag. [code]0[/code] skips capture.
 ## [code]1[/code] installs it for this run. The caller sets this before the run.

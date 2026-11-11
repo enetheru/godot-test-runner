@@ -97,7 +97,7 @@ var scene_tree:SceneTree
 
 ## Installed around the procedure. Null skips it. The test keeps this alive.
 ## TODO, turn hooks into an array
-var hooks:TR_Hooks
+var hooks:TR_Hook
 
 # Written while the run is in progress.
 

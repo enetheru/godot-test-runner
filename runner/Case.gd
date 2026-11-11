@@ -21,9 +21,9 @@ extends RefCounted
 ##[br][br]
 ## [method _configure] assigns [member TR_CaseSession.budget_s] and
 ## [member TR_CaseSession.hooks]. It does not await. A tree host may then
-## install [TracyCapture] when hooks is still empty. [method TR_Hooks.pre]
+## install [TracyCapture] when hooks is still empty. [method TR_Hook.pre]
 ## runs next, then the clock, then the three calls below.
-## [method TR_Hooks.post] runs after those calls, including a timeout.
+## [method TR_Hook.post] runs after those calls, including a timeout.
 ## A non-OK post fails a passing run.
 
 
