@@ -6,7 +6,7 @@ extends TR_Hook
 ## [method install] assigns this object. A run with [member TR_Base.hooks]
 ## empty leaves the capture off. [method pre] runs before [method TR_Base._setup].
 ## [method post] runs after the procedure, including a timeout. The trace is
-## the test script's name plus [code].tracy[/code], in that script's folder.
+## the test script's name, the run kind, and [code].tracy[/code], in that script's folder.
 ## The crop is [code]trim_tracy_tail.py[/code] then [code]shift_tracy_start.py[/code]
 ## [code]--trim-init[/code]. Another Tracy server already attached refuses
 ## the connection. [signal Profiler.server_disconnected] is watched until the
@@ -33,7 +33,7 @@ const _FEATURES:PackedStringArray = [
 const _CAPTURE_EXES:PackedStringArray = []
 const _PYTHON_EXES:PackedStringArray = []
 const _TRACY_SCRIPT_DIRS:PackedStringArray = []
-const Log := TR_Base.Log
+const Log = preload( "uid://br7jtx5cntuan" )
 const TR_Opts = preload( "uid://c3rwpcm55iy6r" )
 
 # ██████  ██████   ██████  ██████  ███████ ██████  ████████ ██ ███████ ███████ #
@@ -185,8 +185,8 @@ func pre() -> Error:
 		return ERR_FILE_NOT_FOUND
 
 	var script_path:String = _script_path()
-	var capture_file:String = script_path.get_basename() + ".tracy"
-	_trace_path = ProjectSettings.globalize_path(capture_file)
+	var capture_file:String = _capture_res_path( script_path )
+	_trace_path = _absolute_trace( capture_file )
 	_log_note("script %s" % script_path)
 
 	_capture_connected = false
@@ -325,6 +325,34 @@ func _scene_tree() -> SceneTree:
 		var tree:SceneTree = found
 		return tree
 	return null
+
+
+## [code]res://[/code] trace path. The run kind keeps each launch's file.
+func _capture_res_path( script_path:String ) -> String:
+	return "%s.%s.tracy" % [ script_path.get_basename(), _run_kind() ]
+
+
+## editorscript when the owner does not name a launch.
+func _run_kind() -> String:
+	if _test == null:
+		return "editorscript"
+	var named:Variant = _test.get( &'run_kind' )
+	if named is String:
+		var kind:String = named
+		if not kind.is_empty():
+			return kind
+	return "editorscript"
+
+
+## Native path beside the script. A pack has no project directory, so [code]CASE_PROJECT[/code] supplies it.
+func _absolute_trace( res_path:String ) -> String:
+	var native:String = ProjectSettings.globalize_path( res_path )
+	if native.is_absolute_path():
+		return native
+	var root:String = OS.get_environment( "CASE_PROJECT" )
+	if root.is_empty():
+		return native
+	return root.path_join( native )
 
 
 ## TR_Case script path when the owner has one. Otherwise the owner's own script.

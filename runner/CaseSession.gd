@@ -30,6 +30,8 @@ const TEST_OK: int = 1
 ## Set by the editor menu before Play. The shell passes paths after `--` instead.
 const PATH_ENV: String = "CASE_PATHS"
 const REPORT_ENV: String = "CASE_REPORT"
+## Absolute project root. A packed run has no [code]res://[/code] directory of its own.
+const PROJECT_ENV: String = "CASE_PROJECT"
 
 ## Default case folder. Discovery reads [method TR_Opts.cases_root].
 const CASE_ROOT: String = TR_Opts.DEFAULT_CASES_DIR
@@ -81,6 +83,9 @@ var hint: bool = false
 
 ## TR_Case script path.
 var path: String = ""
+
+## Trace filename token: editorscript, play_editor, play_debug, play_release, or headless.
+var run_kind: String = ""
 
 # Budget and hooks. The script constant fills the budget, then [method TR_Case._configure] may replace it.
 
@@ -502,6 +507,7 @@ func _prepare( script_path: String = "" ) -> void:
 	hint = Engine.is_editor_hint()
 	if script_path != "":
 		path = script_path
+	run_kind = _kind_name()
 
 func _configure_case( case: TR_Case ) -> void:
 	# Void, and not awaited. An override that awaits is outside this step.
@@ -686,6 +692,20 @@ func _host_name() -> String:
 			return "script"
 		_:
 			return "editor"
+
+## Token stored in the trace filename. [member flavour] splits the three play rows.
+func _kind_name() -> String:
+	match host:
+		Host.SCRIPT:
+			return "headless"
+		Host.PLAY:
+			if flavour == "template_debug":
+				return "play_debug"
+			if flavour == "template_release":
+				return "play_release"
+			return "play_editor"
+		_:
+			return "editorscript"
 
 #endregion Record
 

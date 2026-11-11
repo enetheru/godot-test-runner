@@ -231,6 +231,7 @@ static func _emit_set_changed() -> void:
 
 
 func _run_play( paths: PackedStringArray ) -> void:
+	_mark_project()
 	OS.set_environment( TR_CaseSession.PATH_ENV, ";".join( paths ) )
 	EditorInterface.play_custom_scene( PLAYER_SCENE )
 	OS.unset_environment( TR_CaseSession.PATH_ENV )
@@ -249,6 +250,7 @@ func _run_template( paths: PackedStringArray, debug: bool ) -> void:
 		_toast( "Play pack export failed" )
 		return
 
+	_mark_project()
 	var args := PackedStringArray()
 	args = _arg( args, "--main-pack" )
 	args = _arg( args, pack )
@@ -277,6 +279,7 @@ func _run_template( paths: PackedStringArray, debug: bool ) -> void:
 
 
 func _run_script_host( paths: PackedStringArray ) -> void:
+	_mark_project()
 	var args := PackedStringArray()
 	args = _arg( args, "--headless" )
 	args = _arg( args, "--path" )
@@ -301,6 +304,10 @@ func _run_script_host( paths: PackedStringArray ) -> void:
 	if reported:
 		return
 	_toast( "script host exit %d" % code )
+
+
+func _mark_project() -> void:
+	OS.set_environment( TR_CaseSession.PROJECT_ENV, ProjectSettings.globalize_path( "res://" ) )
 
 
 func _arg( args: PackedStringArray, item: String ) -> PackedStringArray:
