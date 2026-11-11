@@ -607,12 +607,13 @@ func run_case( script:GDScript, result:TestResult ) -> void:
 		result.output.append( row )
 
 
-## Clear InfoBoxes + tree status; also clears service last-results when bound.
+## Clear InfoBoxes and tree status. The rows, the filter, and which folders are open stay.
 func clear_results_ui() -> void:
 	if is_instance_valid( _service ) and _service.has_method( &"clear_results" ):
 		_service.call( &"clear_results" )
+	_clear_stored_results( _test_list )
 	_tests_tree.clear_marks()
-	regenerate_tree()
+	update_stats()
 	if _info_items:
 		for child in _info_items.get_children():
 			child.call_deferred( "queue_free" )
@@ -639,6 +640,15 @@ func _apply_list_filter() -> void:
 #       ██ ██  ██ ██    ██    ██      ██   ██ ██  ██ ██ ██   ██ ██             #
 #       ██ ██   ████    ██    ███████ ██   ██ ██   ████ ██   ██ ███████        #
 func                        ________INTERNAL_________              ()->void:pass
+
+func _clear_stored_results( defs:Array ) -> void:
+	for def_v:Variant in defs:
+		if not def_v is TestDef:
+			continue
+		var test_def:TestDef = def_v
+		test_def.results.clear()
+		_clear_stored_results( test_def.children )
+
 
 ## This binary registered the Profiler singleton. Stock Godot has no such name.
 func _tracy_supported() -> bool:

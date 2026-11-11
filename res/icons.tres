@@ -14,6 +14,8 @@
 [ext_resource type="Texture2D" uid="uid://dnikmf5cigmx6" path="res://addons/enetheru.test-runner/res/close.svg" id="12_cross"]
 [ext_resource type="Texture2D" uid="uid://bfo216mdolcys" path="res://addons/enetheru.test-runner/res/minus.svg" id="13_minus"]
 [ext_resource type="Texture2D" uid="uid://5p4ooo08nes1" path="res://addons/enetheru.test-runner/res/triangle-down.svg" id="14_down"]
+[ext_resource type="Texture2D" uid="uid://caf052wnskwgt" path="res://addons/enetheru.test-runner/res/unfold-more-horizontal.svg" id="15_more"]
+[ext_resource type="Texture2D" uid="uid://brls4iv5buodr" path="res://addons/enetheru.test-runner/res/unfold-less-horizontal.svg" id="16_less"]
 
 [resource]
 script = ExtResource("1_icons")
@@ -30,5 +32,7 @@ tex = Dictionary[StringName, Texture2D]({
 &"CHECK": ExtResource("11_ok"),
 &"CLOSE": ExtResource("12_cross"),
 &"MINUS": ExtResource("13_minus"),
-&"TRIANGLE_DOWN": ExtResource("14_down")
+&"TRIANGLE_DOWN": ExtResource("14_down"),
+&"UNFOLD_MORE": ExtResource("15_more"),
+&"UNFOLD_LESS": ExtResource("16_less")
 })

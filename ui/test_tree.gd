@@ -81,6 +81,12 @@ var _header_layout_waits:int = 0
 # Extra layouts after the first successful one, so a late resize settles.
 var _header_settle:int = 0
 
+# Unfold and fold, in that order. Laid out on the Test header.
+var _fold_buttons:Array[TextureButton] = []
+
+# True while every branch is being opened or closed. The stripe runs once at the end.
+var _folding:bool = false
+
 
 #            ███████ ██  ██████  ███    ██  █████  ██      ███████             #
 #            ██      ██ ██       ████   ██ ██   ██ ██      ██                  #
@@ -132,7 +138,17 @@ func _on_gui_input( event:InputEvent ) -> void:
 
 
 func _on_collapsed( _item:TreeItem ) -> void:
+	if _folding:
+		return
 	_stripe_tree()
+
+
+func _on_unfold() -> void:
+	_fold_all( false )
+
+
+func _on_fold() -> void:
+	_fold_all( true )
 
 
 #      ██████  ██    ██ ███████ ██████  ██████  ██ ██████  ███████ ███████     #
@@ -149,6 +165,7 @@ func _ready() -> void:
 	_listen( resized, _layout_kind_headers )
 	_listen( item_collapsed, _on_collapsed )
 	_ensure_kind_headers()
+	_ensure_fold_buttons()
 
 
 func _notification( what:int ) -> void:
@@ -199,6 +216,7 @@ func rebuild( defs:Array ) -> void:
 
 func clear_marks() -> void:
 	_kind_mark.clear()
+	_repaint_files( get_root() )
 
 
 ## [param kind_ids] are the checked runs. An empty list hides runnable rows in the editor.
@@ -344,6 +362,15 @@ func status_text( status:Status ) -> String:
 #       ██ ██  ██ ██    ██    ██      ██   ██ ██  ██ ██ ██   ██ ██             #
 #       ██ ██   ████    ██    ███████ ██   ██ ██   ████ ██   ██ ███████        #
 func                        ________INTERNAL_________              ()->void:pass
+
+func _repaint_files( item:TreeItem ) -> void:
+	if item == null:
+		return
+	if is_file_item( item ):
+		_paint_run_cells( item )
+	for child:TreeItem in item.get_children():
+		_repaint_files( child )
+
 
 func _listen( sig:Signal, method:Callable ) -> void:
 	if sig.is_connected( method ):
@@ -621,6 +648,9 @@ func _widest_px( words:PackedStringArray ) -> int:
 
 
 func _fit_result_columns() -> void:
+	var title_words:PackedStringArray = PackedStringArray( [ "Test" ] )
+	var fold_room:int = RUN_ICON_SIZE.x * 2 + 6
+	set_column_custom_minimum_width( Column.TEST, _widest_px( title_words ) + fold_room + _column_pad( 0 ) )
 	var status_words:PackedStringArray = Status.keys()
 	if status_words.append( "Status" ):
 		push_error( "test_tree: status word append failed" )
@@ -682,9 +712,70 @@ func _layout_kind_headers() -> void:
 		)
 		rect.size = Vector2( RUN_ICON_SIZE )
 		x += width
+	_layout_fold_buttons( top, left, scroll, band_h )
 	if _header_settle < 2:
 		_header_settle += 1
 		_layout_kind_headers.call_deferred()
+
+
+func _ensure_fold_buttons() -> void:
+	if _fold_buttons.size() == 2:
+		return
+	for old:TextureButton in _fold_buttons:
+		if is_instance_valid( old ):
+			old.queue_free()
+	_fold_buttons.clear()
+	_fold_buttons.append( _fold_button( "Unfold", _icon( &"UNFOLD_MORE" ), "Unfold all", _on_unfold ) )
+	_fold_buttons.append( _fold_button( "Fold", _icon( &"UNFOLD_LESS" ), "Fold all", _on_fold ) )
+
+
+func _fold_button( node_name:String, texture:Texture2D, tip:String, method:Callable ) -> TextureButton:
+	var button := TextureButton.new()
+	button.name = node_name
+	button.texture_normal = texture
+	button.ignore_texture_size = true
+	button.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
+	button.tooltip_text = tip
+	button.custom_minimum_size = Vector2( RUN_ICON_SIZE )
+	button.focus_mode = Control.FOCUS_NONE
+	var err:int = button.pressed.connect( method )
+	if err != OK:
+		push_error( "test_tree._fold_button: connect failed (%s)" % error_string( err ) )
+	add_child( button )
+	return button
+
+
+func _layout_fold_buttons( top:float, left:float, scroll:Vector2, band_h:float ) -> void:
+	if _fold_buttons.size() != 2:
+		return
+	var gap:float = 2.0
+	var edge:float = 4.0
+	var width:float = get_column_width( Column.TEST )
+	var fold_x:float = left - scroll.x + width - edge - RUN_ICON_SIZE.x
+	var unfold_x:float = fold_x - gap - RUN_ICON_SIZE.x
+	var y:float = top + ( band_h - RUN_ICON_SIZE.y ) * 0.5
+	_fold_buttons[0].position = Vector2( unfold_x, y )
+	_fold_buttons[1].position = Vector2( fold_x, y )
+	for button:TextureButton in _fold_buttons:
+		button.size = Vector2( RUN_ICON_SIZE )
+
+
+func _fold_all( collapsed:bool ) -> void:
+	var root:TreeItem = get_root()
+	if root == null:
+		return
+	_folding = true
+	root.collapsed = false
+	for child:TreeItem in root.get_children():
+		_fold_branch( child, collapsed )
+	_folding = false
+	_stripe_tree()
+
+
+func _fold_branch( item:TreeItem, collapsed:bool ) -> void:
+	item.collapsed = collapsed
+	for child:TreeItem in item.get_children():
+		_fold_branch( child, collapsed )
 
 
 func _stripe_tree() -> void:

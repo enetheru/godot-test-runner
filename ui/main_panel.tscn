@@ -6,7 +6,7 @@
 [ext_resource type="Texture2D" uid="uid://clvd7lgq1sdn3" path="res://addons/enetheru.test-runner/res/trash-can.svg" id="6_blb3b"]
 [ext_resource type="Texture2D" uid="uid://dngr7cckmvug" path="res://addons/enetheru.test-runner/res/circle-question.svg" id="7_5fedl"]
 [ext_resource type="Theme" path="res://addons/enetheru.test-runner/res/main_panel_theme.tres" id="8_theme"]
-[ext_resource type="Texture2D" uid="uid://5p4ooo08nes1" path="res://addons/enetheru.test-runner/res/triangle-down.svg" id="9_down"]
+[ext_resource type="Texture2D" uid="uid://slb2bsjrbqwn" path="res://addons/enetheru.test-runner/res/menu-down.svg" id="9_down"]
 [ext_resource type="Script" uid="uid://dvvnrjmjouxec" path="res://addons/enetheru.test-runner/ui/test_tree.gd" id="9_tree"]
 
 [node name="TestRunner" type="VBoxContainer" unique_id=1145744051]
