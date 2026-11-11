@@ -1,6 +1,6 @@
-[gd_resource type="Resource" script_class="TestRunnerOpts" format=3 uid="uid://cj00aakht01yo"]
+[gd_resource type="Resource" format=3 uid="uid://cj00aakht01yo"]
 
-[ext_resource type="Script" uid="uid://c3rwpcm55iy6r" path="res://addons/enetheru.test-runner/scripts/test_runner_opts.gd" id="1_opts"]
+[ext_resource type="Script" uid="uid://c3rwpcm55iy6r" path="res://addons/enetheru.test-runner/runner/test_runner_opts.gd" id="1_opts"]
 
 [resource]
 script = ExtResource("1_opts")
