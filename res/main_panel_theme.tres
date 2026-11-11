@@ -1,5 +1,7 @@
 [gd_resource type="Theme" format=3]
 
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_button"]
+
 [resource]
 ResultStats/base_type = &"RichTextLabel"
 ResultStats/colors/plain = Color(0.785, 0.785, 0.785, 1)
@@ -11,3 +13,6 @@ TestTree/colors/result_ok = Color(0.45, 0.95, 0.5, 1)
 TestTree/colors/result_warning = Color(1, 0.87, 0.4, 1)
 TestTree/colors/result_failed = Color(1, 0.47, 0.42, 1)
 TestTree/colors/result_progress = Color(0.45, 0.65, 1, 1)
+TestTree/constants/button_margin = 0
+TestTree/styles/button_hover = SubResource("StyleBoxEmpty_button")
+TestTree/styles/button_pressed = SubResource("StyleBoxEmpty_button")
