@@ -1,45 +1,49 @@
 @tool
 extends PanelContainer
 
-var title:String
+# Card title. [method set_title] stores it and [method set_content] prints it.
+var _title:String
 
-@onready var label:RichTextLabel = $Elements/Label
-@onready var rtl:RichTextLabel = $Elements/Log/RichTextLabel
+# Status line. Assigned when the card is ready.
+@onready var _label:RichTextLabel = $Elements/Label
+
+# Log well under the status line.
+@onready var _rtl:RichTextLabel = $Elements/Log/RichTextLabel
 
 
 func _ready() -> void:
-	if not rtl.meta_clicked.is_connected( _on_log_meta ):
+	if not _rtl.meta_clicked.is_connected( _on_log_meta ):
 		@warning_ignore( "return_value_discarded" )
-		rtl.meta_clicked.connect( _on_log_meta )
+		_rtl.meta_clicked.connect( _on_log_meta )
 
 
 func set_title( new_title:String ) -> void:
-	title = new_title
-	label.clear()
-	label.add_text( new_title )
+	_title = new_title
+	_label.clear()
+	_label.add_text( new_title )
 
 
 ## Status word on the card, log in the well under it.
 func set_content( status:String, text:String ) -> void:
-	label.clear()
-	label.push_color( _status_color( status ) )
-	label.add_text( status )
-	label.pop()
-	label.add_text( "  %s" % title )
+	_label.clear()
+	_label.push_color( _status_color( status ) )
+	_label.add_text( status )
+	_label.pop()
+	_label.add_text( "  %s" % _title )
 	_write_log( text )
 
 
 func _write_log( text:String ) -> void:
-	rtl.clear()
+	_rtl.clear()
 	if text.is_empty():
 		return
-	rtl.append_text( _tint_level_labels( text ) )
+	_rtl.append_text( _tint_level_labels( text ) )
 
 
 ## Level labels from the log. A line that already has a color tag is left as written.
 func _tint_level_labels( text:String ) -> String:
-	var error_bb := _bb_color( rtl.get_theme_color( &"error" ) )
-	var warning_bb := _bb_color( rtl.get_theme_color( &"warning" ) )
+	var error_bb := _bb_color( _rtl.get_theme_color( &"error" ) )
+	var warning_bb := _bb_color( _rtl.get_theme_color( &"warning" ) )
 	var lines:PackedStringArray = text.split( "\n" )
 	var out := PackedStringArray()
 	for line:String in lines:
@@ -86,4 +90,4 @@ func _status_color( status:String ) -> Color:
 			item = &"warning"
 		"FAILED":
 			item = &"failed"
-	return label.get_theme_color( item )
+	return _label.get_theme_color( item )

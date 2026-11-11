@@ -11,6 +11,7 @@ extends EditorContextMenuPlugin
 
 const CaseSessionScript = preload( "uid://blrcpfnrs606p" )
 const PlayPack = preload( "uid://bmt02dy5hnmht" )
+const TR_Opts = preload( "uid://c3rwpcm55iy6r" )
 
 const PLAYER_SCENE := "res://addons/enetheru.test-runner/runner/player.tscn"
 const SCRIPT_HOST := "res://addons/enetheru.test-runner/runner/script_host.gd"
@@ -23,23 +24,36 @@ const SCRIPT_HOST := "res://addons/enetheru.test-runner/runner/script_host.gd"
 # ██      ██   ██  ██████  ██      ███████ ██   ██    ██    ██ ███████ ███████ #
 func                        ________PROPERTIES_______              ()->void:pass
 
+# The plugin and the panel assign these before the menu is used.
+
+## Context slot. FileSystem unless the plugin assigns another.
 var slot: EditorContextMenuPlugin.ContextMenuSlot = EditorContextMenuPlugin.CONTEXT_SLOT_FILESYSTEM
 
-var _live: CaseSession
-var _picked: PackedStringArray = PackedStringArray()
-
-## The context menu parents this after _popup_menu returns. A local would be the only holder until then.
-var _context_popup: PopupMenu
-
-## When set, the EditorScript item awaits this instead of the case walk.
+## EditorScript row calls this instead of the case walk.
 ## The argument is the picked case paths.
 var editor_runner: Callable
 
-## Set while a sequential set should stop after the script already running.
-static var halt_set: bool = false
-static var set_count: int = 0
-## Panel passes a bool: true while at least one set is walking.
+## Called with true while at least one set is walking.
 static var set_changed: Callable
+
+# A walking set writes these.
+
+## True when the current set should stop after the script already running.
+static var halt_set: bool = false
+
+## How many case sets are walking. The panel reads this for the Run button.
+static var set_count: int = 0
+
+# The popup fills these.
+
+# Paths the popup was built for.
+var _picked: PackedStringArray = PackedStringArray()
+
+# The menu parents this after _popup_menu returns. A local would be the only holder until then.
+var _context_popup: PopupMenu
+
+# Session for the walk that is running.
+var _live: TR_CaseSession
 
 
 #             ███████ ██    ██ ███████ ███    ██ ████████ ███████              #
@@ -52,25 +66,25 @@ func                        __________EVENTS_________              ()->void:pass
 func _on_method( id: int ) -> void:
 	var paths := _picked.duplicate()
 	match id:
-		CaseSession.Launch.EDITORSCRIPT:
+		TR_CaseSession.Launch.EDITORSCRIPT:
 			# Hide already queue_frees this popup. Awaiting in this callback
 			# ends that walk when the first script returns.
 			if editor_runner.is_valid():
 				editor_runner.call_deferred( paths )
 			else:
 				Callable( self, &"_run_editor" ).call_deferred( paths )
-		CaseSession.Launch.HEADLESS:
+		TR_CaseSession.Launch.HEADLESS:
 			_run_script_host( paths )
 
 
 func _on_play( id: int ) -> void:
 	var paths := _picked.duplicate()
 	match id:
-		CaseSession.Launch.PLAY_EDITOR:
+		TR_CaseSession.Launch.PLAY_EDITOR:
 			_run_play( paths )
-		CaseSession.Launch.PLAY_DEBUG:
+		TR_CaseSession.Launch.PLAY_DEBUG:
 			_run_template( paths, true )
-		CaseSession.Launch.PLAY_RELEASE:
+		TR_CaseSession.Launch.PLAY_RELEASE:
 			_run_template( paths, false )
 
 
@@ -122,15 +136,15 @@ func make_run_menu( paths: PackedStringArray, title: String = "" ) -> PopupMenu:
 	if not title.is_empty():
 		popup.add_separator( title )
 	var play := PopupMenu.new()
-	play.add_item( "Editor", CaseSession.Launch.PLAY_EDITOR )
-	play.add_item( "template_debug", CaseSession.Launch.PLAY_DEBUG )
-	play.add_item( "template_release", CaseSession.Launch.PLAY_RELEASE )
+	play.add_item( "Editor", TR_CaseSession.Launch.PLAY_EDITOR )
+	play.add_item( "template_debug", TR_CaseSession.Launch.PLAY_DEBUG )
+	play.add_item( "template_release", TR_CaseSession.Launch.PLAY_RELEASE )
 	var play_err := play.id_pressed.connect( _on_play )
 	if play_err != OK:
 		push_error( "menu.make_run_menu: play connect failed (%s)" % error_string( play_err ) )
-	popup.add_item( "EditorScript", CaseSession.Launch.EDITORSCRIPT )
+	popup.add_item( "EditorScript", TR_CaseSession.Launch.EDITORSCRIPT )
 	popup.add_submenu_node_item( "Play", play )
-	popup.add_item( "Headless -s", CaseSession.Launch.HEADLESS )
+	popup.add_item( "Headless -s", TR_CaseSession.Launch.HEADLESS )
 	var err := popup.id_pressed.connect( _on_method )
 	if err != OK:
 		push_error( "menu.make_run_menu: connect failed (%s)" % error_string( err ) )
@@ -156,7 +170,7 @@ func run_script( scr: Script ) -> void:
 	_live.host = CaseSessionScript.Host.EDITOR
 	_live.attach_tree( tree )
 
-	var case: Case = _live.instantiate( scr )
+	var case: TR_Case = _live.instantiate( scr )
 	if case == null:
 		_live.refuse( "not a case", scr.resource_path )
 		_report()
@@ -172,13 +186,13 @@ func launch( id: int, paths: PackedStringArray ) -> void:
 	CaseSessionScript.clear_report()
 	OS.set_environment( CaseSessionScript.REPORT_ENV, CaseSessionScript.report_file() )
 	match id:
-		CaseSession.Launch.PLAY_EDITOR:
+		TR_CaseSession.Launch.PLAY_EDITOR:
 			_run_play( paths )
-		CaseSession.Launch.PLAY_DEBUG:
+		TR_CaseSession.Launch.PLAY_DEBUG:
 			_run_template( paths, true )
-		CaseSession.Launch.PLAY_RELEASE:
+		TR_CaseSession.Launch.PLAY_RELEASE:
 			_run_template( paths, false )
-		CaseSession.Launch.HEADLESS:
+		TR_CaseSession.Launch.HEADLESS:
 			_run_script_host( paths )
 	OS.unset_environment( CaseSessionScript.REPORT_ENV )
 
@@ -195,7 +209,7 @@ func _editor_item_menu( title: String ) -> PopupMenu:
 	var popup := PopupMenu.new()
 	if not title.is_empty():
 		popup.add_separator( title )
-	popup.add_item( "EditorScript", CaseSession.Launch.EDITORSCRIPT )
+	popup.add_item( "EditorScript", TR_CaseSession.Launch.EDITORSCRIPT )
 	var err := popup.id_pressed.connect( _on_method )
 	if err != OK:
 		push_error( "menu._editor_item_menu: connect failed (%s)" % error_string( err ) )
@@ -217,13 +231,13 @@ static func _emit_set_changed() -> void:
 
 
 func _run_play( paths: PackedStringArray ) -> void:
-	OS.set_environment( CaseSession.PATH_ENV, ";".join( paths ) )
+	OS.set_environment( TR_CaseSession.PATH_ENV, ";".join( paths ) )
 	EditorInterface.play_custom_scene( PLAYER_SCENE )
-	OS.unset_environment( CaseSession.PATH_ENV )
+	OS.unset_environment( TR_CaseSession.PATH_ENV )
 
 
 func _run_template( paths: PackedStringArray, debug: bool ) -> void:
-	var opts := TestRunnerOpts.shared()
+	var opts: TR_Opts = TR_Opts.shared() as TR_Opts
 	var which := "template_debug" if debug else "template_release"
 	var exe := opts.template_debug if debug else opts.template_release
 	if exe == "" or not FileAccess.file_exists( exe ):
@@ -301,7 +315,7 @@ func _case_paths_in( paths: PackedStringArray ) -> PackedStringArray:
 	for path: String in paths:
 		var trimmed := path.trim_suffix( "/" )
 		if trimmed.ends_with( ".gd" ):
-			if _in_case_root( trimmed ) and CaseSession.is_case_path( trimmed ):
+			if _in_case_root( trimmed ) and TR_CaseSession.is_case_path( trimmed ):
 				cases = _take_case( cases, trimmed )
 			continue
 		if _in_case_root( trimmed ):
@@ -310,7 +324,7 @@ func _case_paths_in( paths: PackedStringArray ) -> PackedStringArray:
 
 
 func _in_case_root( path: String ) -> bool:
-	var root: String = TestRunnerOpts.cases_root()
+	var root: String = TR_Opts.cases_root()
 	return path == root or path.begins_with( root + "/" )
 
 
@@ -321,7 +335,7 @@ func _collect_cases( dir_path: String, cases: PackedStringArray ) -> PackedStrin
 		if not file_name.ends_with( ".gd" ):
 			continue
 		var path := dir_path.path_join( file_name )
-		if CaseSession.is_case_path( path ):
+		if TR_CaseSession.is_case_path( path ):
 			cases = _take_case( cases, path )
 
 	var folders := DirAccess.get_directories_at( dir_path )

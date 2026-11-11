@@ -7,9 +7,11 @@ extends Resource
 
 # TODO add a custom inspector
 
+## Named textures. [code]res/icons.tres[/code] fills this when the resource loads.
 @export
 var tex:Dictionary[StringName, Texture2D] = {}
 
+# First [method at_size] for a texture stores the resized copy here.
 var _sized_cache:Dictionary[String, Texture2D] = {}
 
 

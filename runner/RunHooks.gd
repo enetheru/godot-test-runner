@@ -1,16 +1,16 @@
 @tool
 @abstract
-class_name RunHooks
+class_name TR_Hooks
 extends RefCounted
 
 ## Work around one test run.
 ##
-## [TestBase] and [CaseSession] await [method pre] and [method post]. They do
+## [TR_Base] and [TR_CaseSession] await [method pre] and [method post]. They do
 ## not name the subclass methods. Null skips the hooks. [method message] is a
 ## timeline mark and does nothing until a subclass writes it.
 
 
-## Before [method TestBase._setup]. [constant OK] continues the run.
+## Before [method TR_Base._setup]. [constant OK] continues the run.
 @abstract
 func pre() -> Error
 

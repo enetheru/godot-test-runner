@@ -52,7 +52,7 @@ func _run_path( path: String ) -> void:
 		return
 
 	var scr: GDScript = loaded
-	var case: Case = session.instantiate( scr )
+	var case: TR_Case = session.instantiate( scr )
 	if case == null:
 		session.refuse( "not a case", path )
 		CaseSessionScript.report( session.line() )

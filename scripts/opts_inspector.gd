@@ -5,7 +5,7 @@ extends EditorInspectorPlugin
 ##
 ## Level lists every ceiling. Tracy and its pad stay disabled until capture is configured.
 
-const OptsScript = preload( "uid://c3rwpcm55iy6r" )
+const TR_Opts = preload( "uid://c3rwpcm55iy6r" )
 
 
 ##[codeblock lang=text]
@@ -18,6 +18,7 @@ const OptsScript = preload( "uid://c3rwpcm55iy6r" )
 class LevelEditor extends EditorProperty:
 	const _Log = preload( "uid://br7jtx5cntuan" )
 
+	# Ceiling list. _init builds it.
 	var _option:OptionButton
 
 
@@ -40,7 +41,7 @@ class LevelEditor extends EditorProperty:
 
 
 	func _update_property() -> void:
-		var opts:TestRunnerOpts = get_edited_object() as TestRunnerOpts
+		var opts:TR_Opts = get_edited_object() as TR_Opts
 		if opts == null:
 			return
 		var idx:int = _Log.CEILINGS.find( opts.lvl )
@@ -63,7 +64,9 @@ class LevelEditor extends EditorProperty:
 class TracyEditor extends EditorProperty:
 	const _Capture = preload( "uid://c38qii7m273x0" )
 
+	# Tracy switch. _init builds it.
 	var _check:CheckButton
+	# True while this editor is writing the control, so the signal does not echo.
 	var _listening:bool = false
 
 
@@ -89,7 +92,7 @@ class TracyEditor extends EditorProperty:
 	func _listen() -> void:
 		if _listening:
 			return
-		var opts:OptsScript = get_edited_object()
+		var opts:TR_Opts = get_edited_object()
 		if opts == null:
 			return
 		var err:int = opts.changed.connect( _sync )
@@ -100,7 +103,7 @@ class TracyEditor extends EditorProperty:
 
 
 	func _sync() -> void:
-		var opts:TestRunnerOpts = get_edited_object() as TestRunnerOpts
+		var opts:TR_Opts = get_edited_object() as TR_Opts
 		if opts == null:
 			return
 		var supported:bool = Engine.has_singleton( &"Profiler" )
@@ -132,7 +135,9 @@ class PadEditor extends EditorProperty:
 	const _Capture = preload( "uid://c38qii7m273x0" )
 
 
+	# Pad slider. _init builds it.
 	var _slider:EditorSpinSlider
+	# True while this editor is writing the control, so the signal does not echo.
 	var _listening:bool = false
 
 
@@ -173,7 +178,7 @@ class PadEditor extends EditorProperty:
 	func _listen() -> void:
 		if _listening:
 			return
-		var opts:OptsScript = get_edited_object()
+		var opts:TR_Opts = get_edited_object()
 		if opts == null:
 			return
 		var err:int = opts.changed.connect( _sync )
@@ -184,7 +189,7 @@ class PadEditor extends EditorProperty:
 
 
 	func _sync() -> void:
-		var opts:TestRunnerOpts = get_edited_object() as TestRunnerOpts
+		var opts:TR_Opts = get_edited_object() as TR_Opts
 		if opts == null:
 			return
 		var capture_ready:bool = Engine.has_singleton( &"Profiler" ) and _Capture.is_configured()
@@ -206,7 +211,7 @@ const _NO_PROFILER_TIP:String = "This editor has no Profiler, so Tracy capture i
 func                        ________OVERRIDES________              ()->void:pass
 
 func _can_handle( object:Object ) -> bool:
-	return object is OptsScript
+	return object is TR_Opts
 
 
 func _parse_begin( _object:Object ) -> void:

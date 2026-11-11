@@ -1,5 +1,5 @@
 @tool
-extends TestBase
+extends TR_Base
 
 ##                                                                            [br]
 ## │ ___ _            _                   ___ _                _              [br]
@@ -11,7 +11,7 @@ extends TestBase
 ##
 ## Strategy Iterator Description
 
-class TestObject extends TestStrategy:
+class TestObject extends TR_Strategy:
 	var tps:Array = [2,2,2]
 	func _get_phase_count() -> int: return tps.size()
 	func _get_phase_name(phase_idx:int) -> String: return str(phase_idx)

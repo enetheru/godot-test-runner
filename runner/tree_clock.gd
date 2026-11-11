@@ -1,5 +1,5 @@
 @tool
-extends Clock
+extends TR_Clock
 
 ## One-shot timer on a scene-tree root.
 
@@ -11,6 +11,7 @@ extends Clock
 # ██      ██   ██  ██████  ██      ███████ ██   ██    ██    ██ ███████ ███████ #
 func                        ________PROPERTIES_______              ()->void:pass
 
+# Scene-tree timer. bind creates it.
 var _timer: Timer
 
 

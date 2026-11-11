@@ -1,10 +1,9 @@
 @tool
-class_name TestRunnerService
 extends Node
 
 ## Headless façade for TestRunner discovery and batch runs.
 ## Owned by the TestRunner EditorPlugin. Safe for Command Server callers.
-## A [Case] script runs through [CaseSession] in this editor. The batch
+## A [TR_Case] script runs through [TR_CaseSession] in this editor. The batch
 ## runner owns each script.
 ## UI (main_panel) remains the Tree view; this object owns agent-facing state.
 ## Default batch is sequential; [code]opts.parallel[/code] matches the UI
@@ -12,12 +11,13 @@ extends Node
 
 const Shared = preload( "uid://ccrhkvl5ptefw" )
 const Log = preload( "uid://br7jtx5cntuan" )
-const BatchScript = preload( "uid://bsx0nrerfipri" )
+const TR_Opts = preload( "uid://c3rwpcm55iy6r" )
+const _BATCH_UID := "uid://bsx0nrerfipri"
 
 const LAST_JSON_PATH:String = "user://test_runner_last.json"
 const RESULTS_DIR:String = "user://test_runner_results"
-const DEFAULT_TEST_PATH:String = TestRunnerOpts.DEFAULT_TESTS_DIR
-const DEFAULT_CASE_PATH:String = TestRunnerOpts.DEFAULT_CASES_DIR
+const DEFAULT_TEST_PATH:String = TR_Opts.DEFAULT_TESTS_DIR
+const DEFAULT_CASE_PATH:String = TR_Opts.DEFAULT_CASES_DIR
 
 
 # ██████  ██████   ██████  ██████  ███████ ██████  ████████ ██ ███████ ███████ #
@@ -27,20 +27,39 @@ const DEFAULT_CASE_PATH:String = TestRunnerOpts.DEFAULT_CASES_DIR
 # ██      ██   ██  ██████  ██      ███████ ██   ██    ██    ██ ███████ ███████ #
 func                        ________PROPERTIES_______              ()->void:pass
 
+# Defaults. A caller can replace the paths and the ceiling before a run.
+
+## Folder of TR_Base scripts.
 var test_path:String = DEFAULT_TEST_PATH
+
+## Folder of TR_Case scripts.
 var case_path:String = DEFAULT_CASE_PATH
-## Junction / symlink cycle guard — not a group-name depth limit.
+
+## Junction and symlink cycle guard. Not a group-name depth limit.
 var max_scan_depth:int = Shared.DEFAULT_MAX_SCAN_DEPTH
-## Cached groups: { group, folder, scripts:[{file,path}] }
-var groups:Array = []
+
 ## Inclusive [constant Log.Level] copied onto each instance as [code]local_lvl[/code].
 var lvl:int = Log.Level.DEFAULT
-var last_results:Dictionary = {}
-var last_log_path:String = ""
-var is_running:bool = false
 
+# Discovery filters. The defaults keep [code]test*.gd[/code] and every folder.
 var _script_filter:Callable = default_script_filter
 var _folder_filter:Callable = default_folder_filter
+
+# [method reload] fills this.
+
+## Cached groups from the last discovery. Each entry is group, folder, and scripts.
+var groups:Array = []
+
+# [method begin_run] sets the flag. The batch writes the payload when it finishes.
+
+## True from [method begin_run] until the batch finishes.
+var is_running:bool = false
+
+## Last batch payload. Command Server reads this.
+var last_results:Dictionary = {}
+
+## Log written beside [member last_results]. Empty until a batch finishes.
+var last_log_path:String = ""
 
 
 #            ███████ ██  ██████  ███    ██  █████  ██      ███████             #
@@ -82,8 +101,8 @@ func set_lvl( level:int ) -> void:
 
 ## Rescan [member test_path] and [member case_path], then refresh [member groups].
 func reload() -> void:
-	test_path = TestRunnerOpts.tests_root()
-	case_path = TestRunnerOpts.cases_root()
+	test_path = TR_Opts.tests_root()
+	case_path = TR_Opts.cases_root()
 	groups = collect_groups( test_path )
 	groups.append_array( _case_groups() )
 	tests_reloaded.emit()
@@ -382,7 +401,8 @@ func _runner() -> Node:
 	var found:Node = get_node_or_null( ^"Runner" )
 	if found != null:
 		return found
-	var created:Node = BatchScript.new()
+	var batch_scr:GDScript = load( _BATCH_UID ) as GDScript
+	var created:Node = batch_scr.new()
 	created.name = "Runner"
 	created.set( &"service", self )
 	add_child( created )
@@ -391,8 +411,8 @@ func _runner() -> Node:
 ## Rescan when the configured folders changed, or when nothing is cached yet.
 func _ensure_roots() -> void:
 	if groups.is_empty() \
-	or test_path != TestRunnerOpts.tests_root() \
-	or case_path != TestRunnerOpts.cases_root():
+	or test_path != TR_Opts.tests_root() \
+	or case_path != TR_Opts.cases_root():
 		reload()
 
 ## [member case_path] stays empty on a node that was born before the property.
@@ -402,7 +422,7 @@ func _case_root() -> String:
 		var text:String = root_v
 		if not text.is_empty():
 			return text
-	case_path = TestRunnerOpts.cases_root()
+	case_path = TR_Opts.cases_root()
 	return case_path
 
 func _groups_from_tree( nodes:Array, prefix:String ) -> Array:
@@ -432,11 +452,11 @@ func _groups_from_tree( nodes:Array, prefix:String ) -> Array:
 			out.append_array( _groups_from_tree( kids, gname ) )
 	return out
 
-## Case groups under [member case_path]. Names start with [code]Cases[/code].
+## TR_Case groups under [member case_path]. Names start with [code]Cases[/code].
 func _case_groups() -> Array:
 	var out:Array = []
 	var root:String = _case_root()
-	var root_files:Array[String] = CaseSession.case_files( root )
+	var root_files:Array[String] = TR_CaseSession.case_files( root )
 	if not root_files.is_empty():
 		out.append( {
 			"group": "Cases",
@@ -451,7 +471,7 @@ func _case_groups() -> Array:
 			continue
 		var gd:Dictionary = g
 		var folder:String = str( gd.get( "folder", "" ) )
-		var files:Array[String] = CaseSession.case_files( folder )
+		var files:Array[String] = TR_CaseSession.case_files( folder )
 		if files.is_empty():
 			continue
 		gd["scripts"] = _script_rows( folder, files )

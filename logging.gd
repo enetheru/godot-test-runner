@@ -71,29 +71,36 @@ static var Names:Dictionary = {
 class Bound extends RefCounted:
 	const Shim = preload( "uid://br7jtx5cntuan" )
 
-	## Local mute when [member source] has no [code]disabled[/code].
-	var _disabled:bool = false
-	## Live backend, or null.
-	var source:Object = null
-	## Fallback verbosity for [method can_log].
-	var default_lvl:int = Level.DEFAULT
-	## [code]trace(args, object, stack)[/code] when the backend has it.
-	var fn_trace:Callable = _fallback_trace
-	## [code]lvl(lvl, content, object, stack)[/code] when the backend has it.
-	var fn_lvl:Callable = _fallback_lvl
-	## [code]rich(lvl, text, object, stack)[/code] when the backend has it.
-	var fn_rich:Callable = _fallback_rich
+	# Defaults. bind replaces the callables when the backend has those methods.
 
-	## Mute. Forwards to source [code]disabled[/code] when present.
+	# Local mute when the backend has no disabled property.
+	var _disabled:bool = false
+
+	# Fallback verbosity for can_log.
+	var _default_lvl:int = Level.DEFAULT
+
+	# trace(args, object, stack). The fallback prints until bind replaces it.
+	var _fn_trace:Callable = _fallback_trace
+
+	# lvl(lvl, content, object, stack). The fallback prints until bind replaces it.
+	var _fn_lvl:Callable = _fallback_lvl
+
+	# rich(lvl, text, object, stack). The fallback prints until bind replaces it.
+	var _fn_rich:Callable = _fallback_rich
+
+	# Live backend. bind assigns it.
+	var _source:Object = null
+
+	## Mute. Forwards to the backend [code]disabled[/code] when it has one.
 	var disabled:bool:
 		get = _get_disabled,
 		set = _set_disabled
 
 
 	func _get_disabled() -> bool:
-		if is_instance_valid( source ) \
-		and &"disabled" in source:
-			var flag:Variant = source.get( &"disabled" )
+		if is_instance_valid( _source ) \
+		and &"disabled" in _source:
+			var flag:Variant = _source.get( &"disabled" )
 			if flag is bool:
 				return flag
 		return _disabled
@@ -101,9 +108,9 @@ class Bound extends RefCounted:
 
 	func _set_disabled( value:bool ) -> void:
 		_disabled = value
-		if is_instance_valid( source ) \
-		and &"disabled" in source:
-			source.set( &"disabled", value )
+		if is_instance_valid( _source ) \
+		and &"disabled" in _source:
+			_source.set( &"disabled", value )
 
 
 	## Point at [param p_source] and bind [code]trace[/code], [code]lvl[/code],
@@ -111,21 +118,21 @@ class Bound extends RefCounted:
 	func bind( p_source:Object ) -> void:
 		if not is_instance_valid( p_source ):
 			return
-		source = p_source
+		_source = p_source
 		if p_source.has_method( &"trace" ):
-			fn_trace = Callable( p_source, &"trace" )
+			_fn_trace = Callable( p_source, &"trace" )
 		if p_source.has_method( &"lvl" ):
-			fn_lvl = Callable( p_source, &"lvl" )
+			_fn_lvl = Callable( p_source, &"lvl" )
 		if p_source.has_method( &"rich" ):
-			fn_rich = Callable( p_source, &"rich" )
+			_fn_rich = Callable( p_source, &"rich" )
 
 
 	## True when [param object] may emit [param what_lvl].
 	func can_log( what_lvl:int, object:Object ) -> bool:
 		if disabled:
 			return false
-		var class_lvl:int = default_lvl
-		var local_lvl:int = default_lvl
+		var class_lvl:int = _default_lvl
+		var local_lvl:int = _default_lvl
 		if is_instance_valid( object ):
 			var variant:Variant = object.get( &"class_lvl" )
 			if variant is int:
@@ -133,7 +140,7 @@ class Bound extends RefCounted:
 			variant = object.get( &"local_lvl" )
 			if variant is int:
 				local_lvl = variant
-		var enabled:int = default_lvl | class_lvl | local_lvl
+		var enabled:int = _default_lvl | class_lvl | local_lvl
 		return ( enabled & Shim.event_bit( what_lvl ) ) != 0
 
 
@@ -196,13 +203,13 @@ class Bound extends RefCounted:
 		print_rich( str(content) )
 
 
-## Active [Bound]. Created on first use.
+# Active Bound. Created on first use.
 static var _bound:Bound
 
 
 ## Current backend object (null = print fallbacks).
 static var backend:Object:
-	get: return _session().source
+	get: return _session()._source
 
 
 ## Active [Bound], creating an empty one if needed.
@@ -320,7 +327,7 @@ static func get_stack_popped( n:int = 0 ) -> Array:
 static func trace( args:Dictionary = {}, object:Object = null, stack:Array = [] ) -> void:
 	var bound:Bound = _session()
 	if bound.can_log( Level.TRACE, object ):
-		bound.fn_trace.call( args, object, stack )
+		bound._fn_trace.call( args, object, stack )
 
 
 ## Message at [param p_lvl]. [param object] is the identity.
@@ -328,7 +335,7 @@ static func trace( args:Dictionary = {}, object:Object = null, stack:Array = [] 
 static func lvl( p_lvl:int, content:Variant, object:Object = null, stack:Array = [] ) -> void:
 	var bound:Bound = _session()
 	if bound.can_log( p_lvl, object ):
-		bound.fn_lvl.call( p_lvl, content, object, stack )
+		bound._fn_lvl.call( p_lvl, content, object, stack )
 
 
 ## [method print_rich] of [param text] when [param p_lvl] passes.
@@ -338,7 +345,7 @@ static func lvl( p_lvl:int, content:Variant, object:Object = null, stack:Array =
 static func rich( p_lvl:int, content:Variant, object:Object = null, stack:Array = [] ) -> void:
 	var bound:Bound = _session()
 	if bound.can_log( p_lvl, object ):
-		bound.fn_rich.call( p_lvl, content, object, stack )
+		bound._fn_rich.call( p_lvl, content, object, stack )
 
 
 ## ERROR message. [param object] is the identity.
@@ -346,7 +353,7 @@ static func rich( p_lvl:int, content:Variant, object:Object = null, stack:Array 
 static func err( content:Variant, object:Object = null, stack:Array = [] ) -> void:
 	var bound:Bound = _session()
 	if bound.can_log( Level.ERROR, object ):
-		bound.fn_lvl.call( Level.ERROR, content, object, stack )
+		bound._fn_lvl.call( Level.ERROR, content, object, stack )
 
 
 ## WARNING message. [param object] is the identity.
@@ -354,7 +361,7 @@ static func err( content:Variant, object:Object = null, stack:Array = [] ) -> vo
 static func wrn( content:Variant, object:Object = null, stack:Array = [] ) -> void:
 	var bound:Bound = _session()
 	if bound.can_log( Level.WARNING, object ):
-		bound.fn_lvl.call( Level.WARNING, content, object, stack )
+		bound._fn_lvl.call( Level.WARNING, content, object, stack )
 
 
 ## Message at [param p_lvl]. [param object] is the identity.
@@ -363,5 +370,5 @@ static func wrn( content:Variant, object:Object = null, stack:Array = [] ) -> vo
 static func ret( p_lvl:int, content:Variant, object:Object = null, stack:Array = [] ) -> bool:
 	var bound:Bound = _session()
 	if bound.can_log( p_lvl, object ):
-		bound.fn_lvl.call( p_lvl, content, object, stack )
+		bound._fn_lvl.call( p_lvl, content, object, stack )
 	return true

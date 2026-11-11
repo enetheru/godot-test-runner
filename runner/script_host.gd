@@ -15,8 +15,13 @@ const CaseSessionScript = preload( "uid://blrcpfnrs606p" )
 # ██      ██   ██  ██████  ██      ███████ ██   ██    ██    ██ ███████ ███████ #
 func                        ________PROPERTIES_______              ()->void:pass
 
+# TR_Case paths after `--`. _initialize reads them.
 var _paths: PackedStringArray = PackedStringArray()
+
+# Next path. _process advances it.
 var _index: int = 0
+
+# True when no case path was passed.
 var _empty: bool = false
 
 
@@ -53,7 +58,7 @@ func _process( delta: float ) -> bool:
 	var loaded: Resource = load( path )
 	if loaded is GDScript:
 		var scr: GDScript = loaded
-		var case: Case = session.instantiate( scr )
+		var case: TR_Case = session.instantiate( scr )
 		if case == null:
 			session.refuse( "not a case", path )
 		else:

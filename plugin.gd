@@ -8,9 +8,10 @@ const CaseMenu = preload( "uid://bmxtuig6f1i7d" )
 
 ## Plugin Settings
 const SettingsScript = preload( "uid://7tb57rb6jgsd" )
-const OptsScript = preload( "uid://c3rwpcm55iy6r" )
+const TR_Opts = preload( "uid://c3rwpcm55iy6r" )
+const TR_Gate = preload( "uid://c8rungatehold1" )
 const OptsInspector = preload( "uid://dq1b7yvbgshko" )
-const SETTINGS_PREFIX:String = OptsScript.PREFIX
+const SETTINGS_PREFIX:String = TR_Opts.PREFIX
 
 ## ExportPlugin
 const _ExportPlugin = preload( "uid://b8k2h8yctcagr" )
@@ -28,34 +29,49 @@ const Icons = preload( "res/icons.tres" )
 # ██      ██   ██  ██████  ██      ███████ ██   ██    ██    ██ ███████ ███████ #
 func                        ________PROPERTIES_______              ()->void:pass
 
-var main_panel_instance:Control
+# [method _init] builds these.
 
-var service:Node = null
+# Shared options resource.
+var _opts:TR_Opts
 
-var settings_hlp:SettingsScript
+# ProjectSettings mirror for the options resource.
+var _settings_hlp:SettingsScript
 
-var opts:OptsScript
+# [method _enter_tree] adds these, inspector and export first.
 
+# Custom inspector for the options resource.
+var _opts_inspector:EditorInspectorPlugin
+
+# Skips this addon during export.
 var _export_plugin:EditorExportPlugin = null
 
-var _run_pause_cb:Callable = Callable()
+# Discovery and batch runs. get_test_runner_service returns this.
+var _service:Node = null
 
-## Set by the gdflatbuffers libtracy editor test. A normal editor leaves it unset.
-var _headless_arm_tries:int = 0
+## Dock. Command Server looks this up by name.
+var main_panel_instance:Control
 
-# ]======[ Command Server ]======[
-
-var _cs_plugin:EditorPlugin = null
-
-var _cs_reloaded_cb:Callable = Callable()
-
-var _cs_pause_warned:bool = false
-
+# FileSystem and script-editor case menus. Added at the end of [method _enter_tree].
 var _filesystem_menu:CaseMenu
 
 var _script_menu:CaseMenu
 
-var _opts_inspector:EditorInspectorPlugin
+# Command Server registration, deferred from [method _enter_tree].
+
+# The command-server plugin, once found.
+var _cs_plugin:EditorPlugin = null
+
+# Re-publishes our commands after a command-server reload.
+var _cs_reloaded_cb:Callable = Callable()
+
+# True after the pause warning has been printed once.
+var _cs_pause_warned:bool = false
+
+# Connected while a run should pause Command Server.
+var _run_pause_cb:Callable = Callable()
+
+# Headless arm attempts. A normal editor leaves this at zero.
+var _headless_arm_tries:int = 0
 
 
 #             ███████ ██    ██ ███████ ███    ██ ████████ ███████              #
@@ -82,8 +98,8 @@ func _on_test_running( running:bool ) -> void:
 func                        ________OVERRIDES________              ()->void:pass
 
 func _init() -> void:
-	opts = OptsScript.shared()
-	settings_hlp = SettingsScript.new( opts, SETTINGS_PREFIX )
+	_opts = TR_Opts.shared()
+	_settings_hlp = SettingsScript.new( _opts, SETTINGS_PREFIX )
 
 
 func _enter_tree() -> void:
@@ -93,17 +109,17 @@ func _enter_tree() -> void:
 	_export_plugin = _ExportPlugin.new()
 	add_export_plugin( _export_plugin )
 
-	service = ServiceScript.new()
-	service.name = "TestRunnerService"
-	add_child( service )
-	service.call( &"reload" )
+	_service = ServiceScript.new()
+	_service.name = "TestRunnerService"
+	add_child( _service )
+	_service.call( &"reload" )
 
 	main_panel_instance = MainPanel.instantiate()
-	main_panel_instance.set( &"opts", opts )
+	main_panel_instance.set( &"opts", _opts )
 	EditorInterface.get_editor_main_screen().add_child( main_panel_instance )
 	_make_visible( false )
 	if main_panel_instance.has_method( &"bind_service" ):
-		main_panel_instance.call( &"bind_service", service )
+		main_panel_instance.call( &"bind_service", _service )
 	call_deferred( &"_register_with_command_server" )
 	# -s cannot run an EditorScript: main.cpp requires a SceneTree or MainLoop.
 	# This process is already the editor. The runner sets the env only on that
@@ -128,9 +144,9 @@ func _exit_tree() -> void:
 	if main_panel_instance:
 		main_panel_instance.queue_free()
 		main_panel_instance = null
-	if is_instance_valid( service ):
-		service.queue_free()
-		service = null
+	if is_instance_valid( _service ):
+		_service.queue_free()
+		_service = null
 
 
 func _has_main_screen() -> bool:
@@ -158,7 +174,7 @@ func _get_plugin_icon() -> Texture2D:
 func                        _________METHODS_________              ()->void:pass
 
 func get_test_runner_service() -> Node:
-	return service
+	return _service
 
 
 #       ██ ███    ██ ████████ ███████ ██████  ███    ██  █████  ██             #
@@ -215,12 +231,12 @@ func _begin_headless_tests() -> void:
 		if not fs.filesystem_changed.is_connected( _begin_headless_tests ):
 			var _err:int = fs.filesystem_changed.connect( _begin_headless_tests, CONNECT_ONE_SHOT )
 		return
-	if service == null:
+	if _service == null:
 		push_error( "GDFB_HEADLESS_TESTS: TestRunnerService is missing" )
 		get_tree().quit( 1 )
 		return
-	print( "GDFB_HEADLESS_TESTS: running %s" % OptsScript.tests_root() )
-	var resolved:Dictionary = service.call( &"resolve_targets", "all" )
+	print( "GDFB_HEADLESS_TESTS: running %s" % TR_Opts.tests_root() )
+	var resolved:Dictionary = _service.call( &"resolve_targets", "all" )
 	var err := str( resolved.get( &"error", "" ) )
 	if not err.is_empty():
 		push_error( err )
@@ -231,7 +247,7 @@ func _begin_headless_tests() -> void:
 		push_error( "GDFB_HEADLESS_TESTS: no tests" )
 		get_tree().quit( 1 )
 		return
-	service.call( &"begin_run", paths, {}, _headless_tests_done )
+	_service.call( &"begin_run", paths, {}, _headless_tests_done )
 
 
 func _headless_tests_done( results:Dictionary ) -> void:
@@ -250,7 +266,7 @@ func _headless_tests_done( results:Dictionary ) -> void:
 
 
 func _bind_run_pause() -> void:
-	var gate:RunGate = RunGate.shared()
+	var gate:TR_Gate = TR_Gate.shared() as TR_Gate
 	_run_pause_cb = _on_test_running
 	if not gate.running_changed.is_connected( _run_pause_cb ):
 		var err:int = gate.running_changed.connect( _run_pause_cb )
@@ -261,7 +277,7 @@ func _bind_run_pause() -> void:
 
 func _unbind_run_pause() -> void:
 	if _run_pause_cb.is_valid():
-		var gate:RunGate = RunGate.shared()
+		var gate:TR_Gate = TR_Gate.shared() as TR_Gate
 		if gate.running_changed.is_connected( _run_pause_cb ):
 			gate.running_changed.disconnect( _run_pause_cb )
 		_run_pause_cb = Callable()
@@ -315,7 +331,8 @@ func _unregister_from_command_server() -> void:
 
 
 func _apply_run_pause() -> void:
-	_set_command_server_paused( RunGate.shared().is_running() )
+	var gate:TR_Gate = TR_Gate.shared() as TR_Gate
+	_set_command_server_paused( gate.is_running() )
 
 
 func _set_command_server_paused( paused:bool ) -> void:

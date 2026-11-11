@@ -1,7 +1,7 @@
 @tool
 extends CommandServerTool
 
-# Privileged: confirm dialog then TestBase runs via TestRunnerService.
+# Privileged: confirm dialog then TR_Base runs via TR_Service.
 # Default sequential; [code]parallel[/code] matches TestRunner UI (launch all,
 # no await between suites). Do NOT await here — bare RefCounted coroutines are
 # unreliable. Service is a Node and completes via begin_run → on_done.
@@ -241,7 +241,7 @@ func _show_confirm_dialog(
 							response ) )
 					return
 				# Snapshot the existing session_logger ring. Do NOT OS.add_logger —
-				# a second Logger around @tool TestBase batches deadlocked / crashed.
+				# a second Logger around @tool TR_Base batches deadlocked / crashed.
 				var bus:RefCounted = _event_bus( plugin )
 				var since_seq:int = _bus_seq( bus )
 				svc.call(
@@ -249,7 +249,7 @@ func _show_confirm_dialog(
 						paths,
 						opts,
 						func( results:Dictionary ) -> void:
-							# Off the TestBase / Logger stack. Reading the bus (or
+							# Off the TR_Base / Logger stack. Reading the bus (or
 							# stringifying) here deadlocks session_logger.emit vs since.
 							_complete_run.call_deferred(
 									svc,

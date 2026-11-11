@@ -25,32 +25,32 @@ enum RowKind {
 	EDITOR = 4,
 }
 
-## In [enum RunKind] order. [code]launch[/code] is a [enum CaseSession.Launch] id.
+## In [enum RunKind] order. [code]launch[/code] is a [enum TR_CaseSession.Launch] id.
 const RUN:Array[Dictionary] = [
 	{
 		&"icon": &"SCRIPT_TEXT_PLAY",
 		&"tip": "EditorScript",
-		&"launch": CaseSession.Launch.EDITORSCRIPT,
+		&"launch": TR_CaseSession.Launch.EDITORSCRIPT,
 	},
 	{
 		&"icon": &"PLAY_BOX_EDIT_OUTLINE",
 		&"tip": "Play Editor",
-		&"launch": CaseSession.Launch.PLAY_EDITOR,
+		&"launch": TR_CaseSession.Launch.PLAY_EDITOR,
 	},
 	{
 		&"icon": &"BUG_PLAY",
 		&"tip": "Play template_debug",
-		&"launch": CaseSession.Launch.PLAY_DEBUG,
+		&"launch": TR_CaseSession.Launch.PLAY_DEBUG,
 	},
 	{
 		&"icon": &"MOVIE_PLAY",
 		&"tip": "Play template_release",
-		&"launch": CaseSession.Launch.PLAY_RELEASE,
+		&"launch": TR_CaseSession.Launch.PLAY_RELEASE,
 	},
 	{
 		&"icon": &"COG_PLAY",
 		&"tip": "Headless -s",
-		&"launch": CaseSession.Launch.HEADLESS,
+		&"launch": TR_CaseSession.Launch.HEADLESS,
 	},
 ]
 
@@ -62,12 +62,23 @@ const RUN:Array[Dictionary] = [
 # ██      ██   ██  ██████  ██      ███████ ██   ██    ██    ██ ███████ ███████ #
 func                        ________PROPERTIES_______              ()->void:pass
 
-var _selection:Dictionary = {}
+# Which run columns are shown. The panel sets this before a rebuild.
+var _kind_ids:Array[int] = []
+
+# Filled when the rows are built, and as results arrive.
 var _row_kind:Dictionary[String, int] = {}
 var _kind_mark:Dictionary = {}
-var _kind_ids:Array[int] = []
+
+# Selected file rows. Clicks add to it and a rebuild clears it.
+var _selection:Dictionary = {}
+
+# Header icons. Laid out once the tree has a size.
 var _kind_headers:Array[TextureRect] = []
+
+# Deferred layout attempts while the header band has no width yet.
 var _header_layout_waits:int = 0
+
+# Extra layouts after the first successful one, so a late resize settles.
 var _header_settle:int = 0
 
 
@@ -244,15 +255,15 @@ func row_path( item:TreeItem ) -> String:
 
 
 func kind_allows( kind_id:int, item:TreeItem ) -> bool:
-	var host:int = CaseSession.launch_host( kind_id )
-	if host == CaseSession.Host.EDITOR:
+	var host:int = TR_CaseSession.launch_host( kind_id )
+	if host == TR_CaseSession.Host.EDITOR:
 		return true
 	var flags:int = _row_flags( row_path( item ) )
 	if ( flags & RowKind.CASE ) == 0:
 		return false
 	if ( flags & RowKind.EDITOR ) != 0:
 		return false
-	if host == CaseSession.Host.SCRIPT:
+	if host == TR_CaseSession.Host.SCRIPT:
 		return ( flags & RowKind.TREE ) == 0
 	return true
 
@@ -279,7 +290,7 @@ func case_paths_of( files:Array[TreeItem] ) -> PackedStringArray:
 		if not is_instance_valid( file_item ):
 			continue
 		var path:String = row_path( file_item )
-		if not CaseSession.is_case_path( path ):
+		if not TR_CaseSession.is_case_path( path ):
 			continue
 		if paths.append( path ):
 			push_error( "test_tree.case_paths_of: append failed" )
@@ -366,14 +377,14 @@ func _row_flags( path:String ) -> int:
 	if _row_kind.has( path ):
 		return _row_kind[path]
 	var flags := 0
-	if CaseSession.is_case_path( path ):
+	if TR_CaseSession.is_case_path( path ):
 		flags |= RowKind.CASE
 		var loaded:Resource = load( path )
 		if loaded is Script:
 			var scr:Script = loaded
-			if CaseSession.script_flag( scr, "NEEDS_TREE" ):
+			if TR_CaseSession.script_flag( scr, "NEEDS_TREE" ):
 				flags |= RowKind.TREE
-			if CaseSession.script_flag( scr, "EDITOR_ONLY" ):
+			if TR_CaseSession.script_flag( scr, "EDITOR_ONLY" ):
 				flags |= RowKind.EDITOR
 	_row_kind[path] = flags
 	return flags
@@ -456,7 +467,7 @@ func _launch_of( kind:int ) -> int:
 	var launch:Variant = RUN[kind][&"launch"]
 	if launch is int:
 		return launch
-	return CaseSession.Launch.EDITORSCRIPT
+	return TR_CaseSession.Launch.EDITORSCRIPT
 
 
 func _tip( kind:int ) -> String:

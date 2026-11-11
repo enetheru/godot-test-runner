@@ -9,10 +9,11 @@ extends VBoxContainer
 # Scripts
 const InfoBox = preload( "uid://gli414sa5hot" )
 const Shared = preload( "uid://ccrhkvl5ptefw" )
-const OptsScript = preload( "uid://c3rwpcm55iy6r" )
+const TR_Opts = preload( "uid://c3rwpcm55iy6r" )
 const Log = preload( "uid://br7jtx5cntuan" )
 const CaseMenu = preload( "uid://bmxtuig6f1i7d" )
 const TestTree = preload( "uid://dvvnrjmjouxec" )
+const TracyCapture = preload( "uid://c38qii7m273x0" )
 
 # Classes
 const TestDef = Shared.TestDef
@@ -30,69 +31,79 @@ const HELP_PATH:String = "res://addons/enetheru.test-runner/ui/help.md"
 # ██      ██   ██  ██████  ██      ███████ ██   ██    ██    ██ ███████ ███████ #
 func                        ________PROPERTIES_______              ()->void:pass
 
-# Top Row Left
-@onready var run_btn: Button = $Buttons/Left/Run
-@onready var run_kind: MenuButton = $Buttons/Left/RunKind
-@onready var reload_btn: Button = $Buttons/Left/Reload
+# The plugin assigns this before the dock enters the tree.
 
+## ProjectSettings mirror.
+var opts:TR_Opts
+
+# Scene nodes. Assigned when the dock is ready.
+
+# Top row, left. Reload is connected in the scene.
+@onready var _run_btn: Button = $Buttons/Left/Run
+@onready var _run_kind: MenuButton = $Buttons/Left/RunKind
+
+# Top row, right. Clear and Help are connected in the scene.
+@onready var _stats_counter: RichTextLabel = $Buttons/Right/StatsCounter
+
+# Help popup.
+@onready var _help_popup: PopupPanel = $PopupPanel
+@onready var _help_text: RichTextLabel = $PopupPanel/HelpText
+
+# List filter, the tree, and the info cards.
+@onready var _list_filter: LineEdit = $TestOutput/TestList/FilterRow/Filter
+@onready var _tests_tree: TestTree = $TestOutput/TestList/TestsTree
+@onready var _info_items: VBoxContainer = $TestOutput/InfoList/ScrollContainer/InfoItems
+
+# _ready copies opts onto these, and keeps the Run icon for the cancel swap.
+
+# Icon swapped onto the Run button while a walk can be cancelled.
 var _play_icon: Texture2D
 
-# Top Row Center
-@onready var stats_counter: RichTextLabel = $Buttons/Right/StatsCounter
-# Top Row Right
-@onready var clear_btn: Button = $Buttons/Right/ClearResults
-@onready var help_btn: Button = $Buttons/Right/Help
+# Folder of TR_Base scripts.
+var _test_path:String = TR_Opts.DEFAULT_TESTS_DIR
 
-# Help Popup
-@onready var help_popup: PopupPanel = $PopupPanel
-@onready var help_text: RichTextLabel = $PopupPanel/HelpText
+# Folder of TR_Case scripts.
+var _case_path:String = TR_Opts.DEFAULT_CASES_DIR
 
-# tree control
-@onready var list_filter: LineEdit = $TestOutput/TestList/FilterRow/Filter
-@onready var tests_tree: TestTree = $TestOutput/TestList/TestsTree
-@onready var info_list: VBoxContainer = $TestOutput/InfoList
-@onready var info_scroller: ScrollContainer = $TestOutput/InfoList/ScrollContainer
-@onready var info_items: VBoxContainer = $TestOutput/InfoList/ScrollContainer/InfoItems
+# Discovery filter. Keeps test*.gd and skips generated scripts.
+var _test_script_filter:Callable = default_script_filter
 
-# Runtime
-var test_list:Array[TestDef]
+# Junction and symlink cycle guard. Not a UI depth limit.
+var _max_scan_depth:int = Shared.DEFAULT_MAX_SCAN_DEPTH
 
+# Inclusive log ceiling for the next run.
+var _test_lvl:int = Log.Level.DEFAULT
 
+# True when the next run should install Tracy.
+var _test_tracy:bool = false
 
-var test_lvl:int = Log.Level.DEFAULT
-
-var test_tracy:bool = false
-
-## ProjectSettings mirror. The plugin assigns this before the dock enters the tree.
-var opts:OptsScript
-
-## Optional headless service (Command Server). UI still owns Tree/InfoBoxes.
+# bind_service assigns this after _ready.
 var _service:Node = null
 
-## Same Run Case With menu as the FileSystem dock. Built on the first right-click.
+# Built on demand after the dock is ready.
+
+# Same Run TR_Case With menu as the FileSystem dock. Built on the first right-click.
 var _run_menu: CaseMenu
+
+# Popup from the last right-click. Replaced on the next one.
 var _case_popup: PopupMenu
 
-## File rows captured when Run As opened. EditorScript walks this list.
+# Rows from the last discovery.
+var _test_list:Array[TestDef]
+
+# True while the tree is being rebuilt.
+var _already_updating:bool = false
+
+# A dock walk.
+
+# File rows captured when Run As opened. EditorScript walks this list.
 var _pending_rows:Array[TreeItem] = []
 
-## Dock walks inside process_selection. The menu counter can hit zero early.
+# Walks inside process_selection. The menu counter can hit zero early.
 var _walks: int = 0
-## Cancel for a dock walk. The case menu keeps its own halt flag.
+
+# Cancel for a dock walk. The case menu keeps its own halt flag.
 var _halt_walk: bool = false
-
-# Configuration
-var test_path:String = OptsScript.DEFAULT_TESTS_DIR
-var case_path:String = OptsScript.DEFAULT_CASES_DIR
-
-var test_script_filter:Callable = default_script_filter
-
-var test_folder_filter:Callable = default_folder_filter
-
-## Junction / symlink cycle guard — not a UI depth limit.
-var max_scan_depth:int = Shared.DEFAULT_MAX_SCAN_DEPTH
-
-var already_updating:bool = false
 
 #             ███████ ██    ██ ███████ ███    ██ ████████ ███████              #
 #             ██      ██    ██ ██      ████   ██    ██    ██                   #
@@ -141,25 +152,25 @@ func _apply_run_button() -> void:
 		return
 	var active: bool = _walks > 0 or CaseMenu.set_count > 0
 	var cancelling: bool = active and ( ( _walks > 0 and _halt_walk ) or CaseMenu.halt_set )
-	if run_kind != null:
-		run_kind.disabled = active
+	if _run_kind != null:
+		_run_kind.disabled = active
 	if cancelling:
-		run_btn.text = "Cancelling"
-		run_btn.icon = null
-		run_btn.disabled = true
-		run_btn.tooltip_text = "The current script is still finishing."
+		_run_btn.text = "Cancelling"
+		_run_btn.icon = null
+		_run_btn.disabled = true
+		_run_btn.tooltip_text = "The current script is still finishing."
 		return
 	if active:
-		run_btn.text = "Cancel"
-		run_btn.icon = null
-		run_btn.disabled = false
-		run_btn.tooltip_text = "After the current script finishes, leave the rest of the set unrun."
+		_run_btn.text = "Cancel"
+		_run_btn.icon = null
+		_run_btn.disabled = false
+		_run_btn.tooltip_text = "After the current script finishes, leave the rest of the set unrun."
 		return
 	var picking:bool = Engine.is_editor_hint() and _checked_run_ids().is_empty()
-	run_btn.text = "Play"
-	run_btn.icon = _play_icon
-	run_btn.disabled = picking
-	run_btn.tooltip_text = "Check a run in the menu." if picking else "Start the checked runs for the rows on screen."
+	_run_btn.text = "Play"
+	_run_btn.icon = _play_icon
+	_run_btn.disabled = picking
+	_run_btn.tooltip_text = "Check a run in the menu." if picking else "Start the checked runs for the rows on screen."
 
 
 func _on_reload_pressed() -> void:
@@ -170,38 +181,38 @@ func _on_reload_pressed() -> void:
 
 
 func _on_filter_text_changed( new_text:String ) -> void:
-	tests_tree.apply_filter( new_text, _checked_run_ids() )
+	_tests_tree.apply_filter( new_text, _checked_run_ids() )
 
 
 func _on_help_pressed() -> void:
 	# Click-through made every press land on the editor, which hid the popup.
-	help_popup.mouse_passthrough = false
-	help_popup.wrap_controls = false
-	help_text.text = _help_bbcode( _load_help() )
+	_help_popup.mouse_passthrough = false
+	_help_popup.wrap_controls = false
+	_help_text.text = _help_bbcode( _load_help() )
 	var bounds:Vector2 = get_viewport_rect().size
 	var width:int = maxi( mini( int( bounds.x * 0.62 ), 880 ), 520 )
 	var height:int = maxi( mini( int( bounds.y * 0.72 ), 760 ), 420 )
-	help_popup.size = Vector2i( width, height )
-	help_popup.popup_centered()
-	help_text.call_deferred( "scroll_to_line", 0 )
-	help_text.call_deferred( "grab_focus" )
+	_help_popup.size = Vector2i( width, height )
+	_help_popup.popup_centered()
+	_help_text.call_deferred( "scroll_to_line", 0 )
+	_help_text.call_deferred( "grab_focus" )
 
 
 func _on_options_pressed() -> void:
 	if not Engine.is_editor_hint():
 		return
 
-	var target:Resource = opts if opts != null else OptsScript.shared()
+	var target:Resource = opts if opts != null else TR_Opts.shared()
 	EditorInterface.inspect_object( target )
 
 
 func _on_opts_changed() -> void:
-	var prev_tests:String = test_path
-	var prev_cases:String = case_path
+	var prev_tests:String = _test_path
+	var prev_cases:String = _case_path
 	_apply_opts()
 	if not is_node_ready():
 		return
-	if prev_tests == test_path and prev_cases == case_path:
+	if prev_tests == _test_path and prev_cases == _case_path:
 		return
 	if is_instance_valid( _service ) and _service.has_method( &"reload" ):
 		_service.call( &"reload" )
@@ -234,12 +245,12 @@ func _popup_case_menu( item:TreeItem, at:Vector2 ) -> void:
 		return
 	if not is_instance_valid( item ):
 		return
-	var files := tests_tree.files_under( item )
+	var files := _tests_tree.files_under( item )
 	if files.is_empty():
 		return
 	_pending_rows = files
 	# EditorScript runs these rows. Play and Headless still use the case paths.
-	if not _show_run_menu( tests_tree.case_paths_of( files ), at, true ):
+	if not _show_run_menu( _tests_tree.case_paths_of( files ), at, true ):
 		return
 
 
@@ -290,19 +301,19 @@ func _ready() -> void:
 		@warning_ignore( "return_value_discarded" )
 		opts.changed.connect( _on_opts_changed )
 	_apply_opts()
-	_play_icon = run_btn.icon
+	_play_icon = _run_btn.icon
 	CaseMenu.set_changed = _on_set_changed
 	_on_set_changed( CaseMenu.set_count > 0 )
 	_build_run_kinds()
-	if not tests_tree.run_requested.is_connected( _on_run_requested ):
+	if not _tests_tree.run_requested.is_connected( _on_run_requested ):
 		@warning_ignore( "return_value_discarded" )
-		tests_tree.run_requested.connect( _on_run_requested )
-	if not tests_tree.context_menu_requested.is_connected( _popup_case_menu ):
+		_tests_tree.run_requested.connect( _on_run_requested )
+	if not _tests_tree.context_menu_requested.is_connected( _popup_case_menu ):
 		@warning_ignore( "return_value_discarded" )
-		tests_tree.context_menu_requested.connect( _popup_case_menu )
-	if not tests_tree.file_picked.is_connected( _on_file_picked ):
+		_tests_tree.context_menu_requested.connect( _popup_case_menu )
+	if not _tests_tree.file_picked.is_connected( _on_file_picked ):
 		@warning_ignore( "return_value_discarded" )
-		tests_tree.file_picked.connect( _on_file_picked )
+		_tests_tree.file_picked.connect( _on_file_picked )
 	_on_reload_pressed()
 
 
@@ -312,9 +323,9 @@ func _exit_tree() -> void:
 		opts.changed.disconnect( _on_opts_changed )
 	if CaseMenu.set_changed == _on_set_changed:
 		CaseMenu.set_changed = Callable()
-	if is_instance_valid( run_kind ) \
-	and run_kind.get_popup().index_pressed.is_connected( _on_run_kind_index_pressed ):
-		run_kind.get_popup().index_pressed.disconnect( _on_run_kind_index_pressed )
+	if is_instance_valid( _run_kind ) \
+	and _run_kind.get_popup().index_pressed.is_connected( _on_run_kind_index_pressed ):
+		_run_kind.get_popup().index_pressed.disconnect( _on_run_kind_index_pressed )
 
 
 #         ███    ███ ███████ ████████ ██   ██  ██████  ██████  ███████         #
@@ -340,14 +351,9 @@ func default_script_filter( filename:String ) -> bool:
 		and not filename.ends_with("_generated.gd")
 
 
-func default_folder_filter( folder_path:String ) -> bool:
-	var files:Array = DirAccess.get_files_at( folder_path )
-	return not files.filter( test_script_filter ).is_empty()
-
-
 func collect_tests( _path:String ) -> Array[TestDef]:
 	var tree:Array[Dictionary] = Shared.collect_test_tree(
-			_path, max_scan_depth, test_script_filter )
+			_path, _max_scan_depth, _test_script_filter )
 	var tests:Array[TestDef] = []
 	for node:Dictionary in tree:
 		tests.append( _test_def_from_node( node ) )
@@ -359,14 +365,14 @@ func collect_tests( _path:String ) -> Array[TestDef]:
 
 
 func update_stats() -> void:
-	if already_updating: return
-	already_updating = true
-	stats_counter.clear()
+	if _already_updating: return
+	_already_updating = true
+	_stats_counter.clear()
 	var groups:int = 0
 	var results:int = 0
 	var failures:int = 0
 	var successes:int = 0
-	var stack:Array = test_list.duplicate()
+	var stack:Array = _test_list.duplicate()
 	while not stack.is_empty():
 		var test_def:TestDef = stack.pop_back()
 		groups += 1
@@ -379,24 +385,24 @@ func update_stats() -> void:
 				var child_def:TestDef = child_v
 				stack.append( child_def )
 
-	var plain := stats_counter.get_theme_color( &"plain" )
-	var bad := stats_counter.get_theme_color( &"failure" )
-	var good := stats_counter.get_theme_color( &"pass" )
+	var plain := _stats_counter.get_theme_color( &"plain" )
+	var bad := _stats_counter.get_theme_color( &"failure" )
+	var good := _stats_counter.get_theme_color( &"pass" )
 	_add_count( groups, "folder", "folders", plain, false )
 	_add_count( results, "result", "results", plain, true )
 	_add_count( failures, "failure", "failures", bad, true )
 	_add_count( successes, "pass", "passes", good, true )
-	already_updating = false
+	_already_updating = false
 
 
 ## One count, in [param tint]. A separator stays in the label's own font color.
 func _add_count( count:int, one:String, many:String, tint:Color, separator:bool ) -> void:
 	if separator:
-		stats_counter.add_text( ", " )
+		_stats_counter.add_text( ", " )
 	var word := one if count == 1 else many
-	stats_counter.push_color( tint )
-	stats_counter.add_text( "%d %s" % [count, word] )
-	stats_counter.pop()
+	_stats_counter.push_color( tint )
+	_stats_counter.add_text( "%d %s" % [count, word] )
+	_stats_counter.pop()
 
 
 func create_info( file_item:TreeItem ) -> Control:
@@ -404,7 +410,7 @@ func create_info( file_item:TreeItem ) -> Control:
 	var file_name:String = file_item.get_text(0)
 
 	var info_box:InfoBox = INFO_BOX.instantiate()
-	info_items.add_child(info_box)
+	_info_items.add_child(info_box)
 	info_box.show()
 	if not info_box.is_node_ready(): await info_box.ready
 
@@ -451,25 +457,25 @@ func _walk_rows( rows:Array[TreeItem] ) -> bool:
 
 
 func _selection_files() -> Array[TreeItem]:
-	return tests_tree.selected_files()
+	return _tests_tree.selected_files()
 
 
 func _build_run_kinds() -> void:
-	if run_kind == null:
+	if _run_kind == null:
 		return
 	if not Engine.is_editor_hint():
-		run_kind.visible = false
+		_run_kind.visible = false
 		return
-	var popup := run_kind.get_popup()
+	var popup := _run_kind.get_popup()
 	popup.clear()
 	# The menu draws the mark. It does not change it.
 	popup.hide_on_item_selection = false
 	popup.hide_on_checkable_item_selection = false
-	_add_run_kind( popup, "EditorScript", CaseSession.Launch.EDITORSCRIPT, true )
-	_add_run_kind( popup, "Play Editor", CaseSession.Launch.PLAY_EDITOR, false )
-	_add_run_kind( popup, "Play template_debug", CaseSession.Launch.PLAY_DEBUG, false )
-	_add_run_kind( popup, "Play template_release", CaseSession.Launch.PLAY_RELEASE, false )
-	_add_run_kind( popup, "Headless -s", CaseSession.Launch.HEADLESS, false )
+	_add_run_kind( popup, "EditorScript", TR_CaseSession.Launch.EDITORSCRIPT, true )
+	_add_run_kind( popup, "Play Editor", TR_CaseSession.Launch.PLAY_EDITOR, false )
+	_add_run_kind( popup, "Play template_debug", TR_CaseSession.Launch.PLAY_DEBUG, false )
+	_add_run_kind( popup, "Play template_release", TR_CaseSession.Launch.PLAY_RELEASE, false )
+	_add_run_kind( popup, "Headless -s", TR_CaseSession.Launch.HEADLESS, false )
 	if not popup.index_pressed.is_connected( _on_run_kind_index_pressed ):
 		var err:int = popup.index_pressed.connect( _on_run_kind_index_pressed )
 		if err != OK:
@@ -486,7 +492,7 @@ func _add_run_kind( popup:PopupMenu, label:String, id:int, on:bool ) -> void:
 
 
 func _on_run_kind_index_pressed( index:int ) -> void:
-	var popup := run_kind.get_popup()
+	var popup := _run_kind.get_popup()
 	popup.toggle_item_checked( index )
 
 	_refresh_run_kind_title()
@@ -495,10 +501,10 @@ func _on_run_kind_index_pressed( index:int ) -> void:
 
 
 func _refresh_run_kind_title() -> void:
-	if run_kind == null:
+	if _run_kind == null:
 		return
 	var labels := PackedStringArray()
-	var popup := run_kind.get_popup()
+	var popup := _run_kind.get_popup()
 	for index:int in popup.item_count:
 		if not popup.is_item_checked( index ):
 			continue
@@ -506,19 +512,19 @@ func _refresh_run_kind_title() -> void:
 			push_error( "main_panel._refresh_run_kind_title: append failed" )
 			break
 	if labels.is_empty():
-		run_kind.text = "No run"
+		_run_kind.text = "No run"
 		return
 	if labels.size() == 1:
-		run_kind.text = labels[0]
+		_run_kind.text = labels[0]
 		return
-	run_kind.text = "%d runs" % labels.size()
+	_run_kind.text = "%d runs" % labels.size()
 
 
 func _checked_run_ids() -> Array[int]:
 	var ids:Array[int] = []
-	if run_kind == null or not run_kind.visible:
+	if _run_kind == null or not _run_kind.visible:
 		return ids
-	var popup := run_kind.get_popup()
+	var popup := _run_kind.get_popup()
 	for index:int in popup.item_count:
 		if popup.is_item_checked( index ):
 			ids.append( popup.get_item_id( index ) )
@@ -526,7 +532,7 @@ func _checked_run_ids() -> Array[int]:
 
 
 func process_test( file_item:TreeItem ) -> void:
-	if not tests_tree.is_file_item( file_item ):
+	if not _tests_tree.is_file_item( file_item ):
 		return
 	var info_box:InfoBox = await create_info( file_item )
 	var test_def:TestDef = file_item.get_metadata(0)
@@ -539,9 +545,9 @@ func process_test( file_item:TreeItem ) -> void:
 	result.latest = info_box
 	result.retcode = RetCode.TEST_FAILED
 	result.output = ["Only Just Created"]
-	tests_tree.remember( script_path, CaseSession.Launch.EDITORSCRIPT, TestTree.Mark.RUN )
-	tests_tree.paint_kind( file_item, CaseSession.Launch.EDITORSCRIPT )
-	tests_tree.set_status( file_item, TestTree.Status.INPROGRESS )
+	_tests_tree.remember( script_path, TR_CaseSession.Launch.EDITORSCRIPT, TestTree.Mark.RUN )
+	_tests_tree.paint_kind( file_item, TR_CaseSession.Launch.EDITORSCRIPT )
+	_tests_tree.set_status( file_item, TestTree.Status.INPROGRESS )
 
 	# Tests can be run three ways.
 	# 	1. Headless as EditorScript
@@ -549,7 +555,7 @@ func process_test( file_item:TreeItem ) -> void:
 	# 	3. In a game from the test runner as Node
 	# If the last, the script header needs to be re-written to extend Node.
 	# A case keeps its script. The session is the host.
-	var case_run:bool = CaseSession.is_case_path( script_path )
+	var case_run:bool = TR_CaseSession.is_case_path( script_path )
 	if not case_run and not Engine.is_editor_hint():
 		script_path = re_write(script_path)
 		# If Script path fails
@@ -567,7 +573,7 @@ func process_test( file_item:TreeItem ) -> void:
 	elif case_run:
 		await run_case( script, result )
 	elif Engine.is_editor_hint():
-		var instance:TestBase  = script.new()
+		var instance:TR_Base  = script.new()
 		if instance:await run_test_base( instance, result )
 
 	#Erase our alternate script file after we are done.
@@ -578,7 +584,7 @@ func process_test( file_item:TreeItem ) -> void:
 			result.output.append(msg)
 			printerr( msg )
 
-	if Log.allows( test_lvl, Log.Level.INFO ) \
+	if Log.allows( _test_lvl, Log.Level.INFO ) \
 	or result.retcode == RetCode.TEST_FAILED:
 		info_text = "Empty" if result.output.is_empty() \
 			else result.output.reduce(Shared.reducer_to_lines)
@@ -586,9 +592,9 @@ func process_test( file_item:TreeItem ) -> void:
 	_finish_editor( file_item, script_path, result, info_box, info_text )
 
 
-func run_test_base( instance:TestBase, result:TestResult ) -> void:
+func run_test_base( instance:TR_Base, result:TestResult ) -> void:
 	_apply_opts()
-	instance.local_lvl = test_lvl
+	instance.local_lvl = _test_lvl
 	@warning_ignore('redundant_await')
 	await instance.run_harness()
 	result.retcode = instance.runcode as RetCode
@@ -598,10 +604,10 @@ func run_test_base( instance:TestBase, result:TestResult ) -> void:
 ## Editor host while this dock is in the editor. Play host while a game is running.
 func run_case( script:GDScript, result:TestResult ) -> void:
 	_apply_opts()
-	var session := CaseSession.new()
-	session.host = CaseSession.Host.EDITOR if Engine.is_editor_hint() else CaseSession.Host.PLAY
+	var session := TR_CaseSession.new()
+	session.host = TR_CaseSession.Host.EDITOR if Engine.is_editor_hint() else TR_CaseSession.Host.PLAY
 	# The options flag requests a capture. Off leaves the run untraced.
-	if test_tracy:
+	if _test_tracy:
 		session.capture_request = 1
 	var scene_tree:SceneTree = get_tree()
 	if scene_tree == null:
@@ -609,7 +615,7 @@ func run_case( script:GDScript, result:TestResult ) -> void:
 		result.output = ["No SceneTree for case"]
 		return
 	session.attach_tree( scene_tree )
-	var body:Case = session.instantiate( script )
+	var body:TR_Case = session.instantiate( script )
 	if body == null:
 		result.retcode = RetCode.TEST_FAILED
 		result.output = ["Not a case"]
@@ -664,26 +670,26 @@ extends PlayBase\n"
 func clear_results_ui() -> void:
 	if is_instance_valid( _service ) and _service.has_method( &"clear_results" ):
 		_service.call( &"clear_results" )
-	tests_tree.clear_marks()
+	_tests_tree.clear_marks()
 	regenerate_tree()
-	if info_items:
-		for child in info_items.get_children():
+	if _info_items:
+		for child in _info_items.get_children():
 			child.call_deferred( "queue_free" )
 
 
 func regenerate_tree() -> void:
-	test_list = collect_tests( test_path )
+	_test_list = collect_tests( _test_path )
 	_pending_rows.clear()
-	tests_tree.rebuild( test_list )
+	_tests_tree.rebuild( _test_list )
 	update_stats()
 	_apply_list_filter()
 
 
 func _apply_list_filter() -> void:
 	var pattern := ""
-	if list_filter != null:
-		pattern = list_filter.text
-	tests_tree.apply_filter( pattern, _checked_run_ids() )
+	if _list_filter != null:
+		pattern = _list_filter.text
+	_tests_tree.apply_filter( pattern, _checked_run_ids() )
 
 
 #       ██ ███    ██ ████████ ███████ ██████  ███    ██  █████  ██             #
@@ -700,19 +706,19 @@ func _tracy_supported() -> bool:
 
 ## Copy [member opts] onto the service and the Tracy hook.
 func _apply_opts() -> void:
-	test_path = OptsScript.tests_root()
-	case_path = OptsScript.cases_root()
+	_test_path = TR_Opts.tests_root()
+	_case_path = TR_Opts.cases_root()
 	if opts != null:
-		test_lvl = opts.lvl
-		test_tracy = opts.tracy
+		_test_lvl = opts.lvl
+		_test_tracy = opts.tracy
 	var capture_ready:bool = _tracy_supported() and TracyCapture.is_configured()
 	var installer:Callable = Callable()
-	if capture_ready and test_tracy:
+	if capture_ready and _test_tracy:
 		installer = Callable(TracyCapture, &"install")
-	TestBase.prepare_run = installer
+	TR_Base.prepare_run = installer
 	if is_instance_valid( _service ) \
 	and _service.has_method( &"set_lvl" ):
-		_service.call( &"set_lvl", test_lvl )
+		_service.call( &"set_lvl", _test_lvl )
 
 
 func _load_help() -> String:
@@ -763,13 +769,13 @@ func _store_flag( prop:StringName, value:Variant ) -> void:
 
 
 func _case_root() -> String:
-	var root_v:Variant = case_path
+	var root_v:Variant = _case_path
 	if root_v is String:
 		var text:String = root_v
 		if not text.is_empty():
 			return text
-	case_path = OptsScript.cases_root()
-	return case_path
+	_case_path = TR_Opts.cases_root()
+	return _case_path
 
 
 func _cases_branch() -> TestDef:
@@ -777,9 +783,9 @@ func _cases_branch() -> TestDef:
 	var branch:TestDef = TestDef.new()
 	branch.name = "Cases"
 	branch.folder_path = root
-	branch.test_scripts = CaseSession.case_files( root )
+	branch.test_scripts = TR_CaseSession.case_files( root )
 	var tree:Array[Dictionary] = Shared.collect_test_tree(
-			root, max_scan_depth, _gd_file_filter )
+			root, _max_scan_depth, _gd_file_filter )
 	for node:Dictionary in tree:
 		var child:TestDef = _prune_case_def( _test_def_from_node( node ) )
 		if child != null:
@@ -790,7 +796,7 @@ func _cases_branch() -> TestDef:
 
 
 func _prune_case_def( def:TestDef ) -> TestDef:
-	def.test_scripts = CaseSession.case_files( def.folder_path )
+	def.test_scripts = TR_CaseSession.case_files( def.folder_path )
 	var kept:Array = []
 	for child_v:Variant in def.children:
 		if child_v is TestDef:
@@ -822,7 +828,7 @@ func _test_def_from_node( node:Dictionary ) -> TestDef:
 
 ## One file, one run kind. EditorScript walks the row. The other kinds launch.
 func _run_kind_on_row( item:TreeItem, kind_id:int ) -> void:
-	if not tests_tree.is_file_item( item ):
+	if not _tests_tree.is_file_item( item ):
 		return
 	if _walks > 0 or CaseMenu.set_count > 0:
 		return
@@ -832,23 +838,23 @@ func _run_kind_on_row( item:TreeItem, kind_id:int ) -> void:
 
 ## True when Cancel stopped this kind. EditorScript walks. Other kinds read the case report.
 func _launch_kind( kind_id:int, files:Array[TreeItem] ) -> bool:
-	if kind_id == CaseSession.Launch.EDITORSCRIPT:
+	if kind_id == TR_CaseSession.Launch.EDITORSCRIPT:
 		_pending_rows = files
 		return await _walk_rows( files )
-	var paths:PackedStringArray = tests_tree.paths_for_kind( kind_id, files )
+	var paths:PackedStringArray = _tests_tree.paths_for_kind( kind_id, files )
 	if paths.is_empty():
 		return false
 	for file_item:TreeItem in files:
-		if is_instance_valid( file_item ) and tests_tree.kind_allows( kind_id, file_item ):
-			tests_tree.remember( tests_tree.row_path( file_item ), kind_id, TestTree.Mark.RUN )
-			tests_tree.paint_kind( file_item, kind_id )
-			tests_tree.set_status( file_item, TestTree.Status.INPROGRESS )
+		if is_instance_valid( file_item ) and _tests_tree.kind_allows( kind_id, file_item ):
+			_tests_tree.remember( _tests_tree.row_path( file_item ), kind_id, TestTree.Mark.RUN )
+			_tests_tree.paint_kind( file_item, kind_id )
+			_tests_tree.set_status( file_item, TestTree.Status.INPROGRESS )
 	_walks += 1
 	_apply_run_button()
 	if _run_menu == null:
 		_run_menu = CaseMenu.new()
 	_run_menu.launch( kind_id, paths )
-	if kind_id == CaseSession.Launch.PLAY_EDITOR:
+	if kind_id == TR_CaseSession.Launch.PLAY_EDITOR:
 		await _wait_for_play()
 	_apply_report( kind_id, paths )
 	var stopped := _halt_walk
@@ -874,7 +880,7 @@ func _wait_for_play() -> void:
 
 func _apply_report( kind_id:int, paths:PackedStringArray ) -> void:
 	var seen:Dictionary = {}
-	var text:String = FileAccess.get_file_as_string( CaseSession.report_file() )
+	var text:String = FileAccess.get_file_as_string( TR_CaseSession.report_file() )
 	for raw:String in text.split( "\n" ):
 		var line := raw.strip_edges()
 		if not line.begins_with( "case " ):
@@ -890,13 +896,13 @@ func _apply_report( kind_id:int, paths:PackedStringArray ) -> void:
 			continue
 		var mark:TestTree.Mark = TestTree.Mark.OK if status == "pass" else TestTree.Mark.FAIL
 		seen[path] = true
-		tests_tree.remember( path, kind_id, mark )
-		tests_tree.repaint_path( path )
+		_tests_tree.remember( path, kind_id, mark )
+		_tests_tree.repaint_path( path )
 	for path:String in paths:
 		if seen.has( path ):
 			continue
-		tests_tree.remember( path, kind_id, TestTree.Mark.FAIL )
-		tests_tree.repaint_path( path )
+		_tests_tree.remember( path, kind_id, TestTree.Mark.FAIL )
+		_tests_tree.repaint_path( path )
 
 
 func _finish_editor(
@@ -915,10 +921,10 @@ func _finish_editor(
 		else:
 			mark = TestTree.Mark.OK
 			status = TestTree.Status.OK
-	var label := tests_tree.status_text( status )
-	tests_tree.remember( path, CaseSession.Launch.EDITORSCRIPT, mark )
-	tests_tree.paint_kind( item, CaseSession.Launch.EDITORSCRIPT )
-	tests_tree.set_status( item, status )
+	var label := _tests_tree.status_text( status )
+	_tests_tree.remember( path, TR_CaseSession.Launch.EDITORSCRIPT, mark )
+	_tests_tree.paint_kind( item, TR_CaseSession.Launch.EDITORSCRIPT )
+	_tests_tree.set_status( item, status )
 	if info_box != null:
 		info_box.set_content( label, info_text )
 	update_stats()

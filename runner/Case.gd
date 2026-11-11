@@ -1,5 +1,5 @@
 @tool
-class_name Case
+class_name TR_Case
 extends RefCounted
 
 ##[codeblock lang=text]
@@ -19,11 +19,11 @@ extends RefCounted
 ## session can read: NEEDS_TREE, EDITOR_ONLY, NEEDS_MAIN_SCENE, NATIVE,
 ## BUDGET_S. Absent means no, empty, or five seconds.
 ##[br][br]
-## [method _configure] assigns [member CaseSession.budget_s] and
-## [member CaseSession.hooks]. It does not await. A tree host may then
-## install [TracyCapture] when hooks is still empty. [method RunHooks.pre]
+## [method _configure] assigns [member TR_CaseSession.budget_s] and
+## [member TR_CaseSession.hooks]. It does not await. A tree host may then
+## install [TracyCapture] when hooks is still empty. [method TR_Hooks.pre]
 ## runs next, then the clock, then the three calls below.
-## [method RunHooks.post] runs after those calls, including a timeout.
+## [method TR_Hooks.post] runs after those calls, including a timeout.
 ## A non-OK post fails a passing run.
 
 
@@ -34,7 +34,8 @@ extends RefCounted
 # ██      ██   ██  ██████  ██      ███████ ██   ██    ██    ██ ███████ ███████ #
 func                        ________PROPERTIES_______              ()->void:pass
 
-var session: CaseSession
+## Record that built this case. Assigned before [method _configure].
+var session: TR_CaseSession
 
 
 #            ██    ██ ██ ██████  ████████ ██    ██  █████  ██                  #
@@ -44,7 +45,7 @@ var session: CaseSession
 #              ████   ██ ██   ██    ██     ██████  ██   ██ ███████             #
 func                        _________VIRTUAL_________              ()->void:pass
 
-## Assign [member CaseSession.budget_s] and [member CaseSession.hooks] here. No await.
+## Assign [member TR_CaseSession.budget_s] and [member TR_CaseSession.hooks] here. No await.
 func _configure() -> void:
 	pass
 
@@ -54,7 +55,7 @@ func _setup() -> Error:
 
 
 func _run_test() -> int:
-	return CaseSession.TEST_OK
+	return TR_CaseSession.TEST_OK
 
 
 func _cleanup() -> Error:

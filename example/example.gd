@@ -1,5 +1,5 @@
 @tool
-extends TestBase
+extends TR_Base
 
 # runcode is defined in the parent script, it is the result that is checked for success
 # it's default value is RetCode.TEST_OK, there is only TEST_OK and TEST_FAILED at this point

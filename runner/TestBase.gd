@@ -1,8 +1,8 @@
 @tool @abstract
-class_name TestBase extends EditorScript
-var cycleref: EditorScript
+class_name TR_Base extends EditorScript
 
-const OptsScript = preload( "uid://c3rwpcm55iy6r" )
+const TR_Opts = preload( "uid://c3rwpcm55iy6r" )
+const TR_Gate = preload( "uid://c8rungatehold1" )
 const Shared = preload( "uid://ccrhkvl5ptefw" )
 const TracyHooks = preload( "uid://c38qii7m273x0" )
 const Log = preload( "uid://br7jtx5cntuan" )
@@ -62,34 +62,10 @@ static var op_string:PackedStringArray = [
 # ██      ██   ██  ██████  ██      ███████ ██   ██    ██    ██ ███████ ███████ #
 func                        ________PROPERTIES_______              ()->void:pass
 
-## ProjectSettings mirror. The plugin assigns this before the dock enters the tree.
-var opts:OptsScript
+# Defaults. A test replaces the budget in [method _configure].
 
-## using the filename and path garantees a unique name.
+## Filename and path, so two scripts do not share a name.
 var test_name:String = str(get_script().resource_path).validate_node_name()
-
-## Host assigns this before runs. [method run_test] calls it with this instance
-## when [member hooks] is still empty, after the scene tree is ready and before [method _setup].
-static var prepare_run:Callable = Callable()
-
-## [method RunGate.enter] hold for this run. [method _release_pin] drops it.
-var _run_hold:RunGate.Hold = RunGate.create_hold()
-
-# ]======[ Flags ]======[
-
-## Command batch. -1 follows the host. 0 skips capture. 1 installs it for this run.
-var capture_request:int = -1
-
-## True after [signal test_finished] for this run (timeout or normal complete).
-## Makes [method run_test] return on max-runtime even if `_run_test` is stuck.
-var _finished_emitted:bool = false
-
-## Max-runtime timer won the race; late `_run_test` completion is ignored.
-var _timed_out:bool = false
-
-var _test_tracy:bool = false
-
-# ]======[ Variables ]======[
 
 ## Inclusive [constant Log.Level]. Notice is quiet. Info and debug raise it.
 var local_lvl:int = Log.Level.ERROR
@@ -97,6 +73,30 @@ var local_lvl:int = Log.Level.ERROR
 ## Budget for setup, the body, and cleanup. Set it in [method _configure].
 ## The abort timer starts when setup starts. Tracy adds [code]tracy_pad_s[/code].
 var harness_time_s:float = 1.0
+
+## Command batch. -1 follows the host. 0 skips capture. 1 installs it for this run.
+var capture_request:int = -1
+
+# Read in [method _init] when something set it first. Nothing in this project does.
+var _opts:TR_Opts
+
+# [method TR_Gate.enter] hold for this run. Created with the instance. [method _release_pin] drops it.
+var _run_hold:TR_Gate.Hold = TR_Gate.create_hold()
+
+# The host assigns these before the body.
+
+## Host assigns this before runs. [method run_test] calls it with this instance
+## when [member hooks] is still empty, after the scene tree is ready and before [method _setup].
+static var prepare_run:Callable = Callable()
+
+## Editor SceneTree, or a runtime SceneTree, depending on the test.
+var scene_tree:SceneTree
+
+## Installed around the procedure. Null skips it. The test keeps this alive.
+## TODO, turn hooks into an array
+var hooks:TR_Hooks
+
+# Written while the run is in progress.
 
 ## Milliseconds when setup was about to start. Capture uses this against its launch.
 var harness_mark_msec:int = 0
@@ -106,24 +106,29 @@ var setup_s:float = -1.0
 var run_s:float = -1.0
 var cleanup_s:float = -1.0
 
+# Keeps this instance alive for the awaits inside [method _run].
+var _cycleref: EditorScript
+
+# Timeout timer. Created for the run and freed after it.
+var _timer:Timer
+
+# True after test_finished for this run, timeout or normal complete.
+# Makes run_test return on max-runtime even if _run_test is stuck.
+var _finished_emitted:bool = false
+
+# Max-runtime timer won the race. A late _run_test completion is ignored.
+var _timed_out:bool = false
+
+# True when this run installed Tracy. _apply_opts sets it.
+var _test_tracy:bool = false
+
+# Phase flags. Set when that phase returns.
 var _setup_done:bool = false
 var _setup_error:Error = OK
 var _cleanup_done:bool = false
 var _cleanup_error:Error = OK
 
-# ]======[ Run-Time Objects ]======[
-
-## Either the Editor SceneTree or a runtime SceneTree depending on the test
-var scene_tree:SceneTree
-
-## The timer used for timeout
-var timer:Timer
-
-## Installed around the procedure. Null skips it. The test keeps this alive.
-## TODO, turn hooks into an array
-var hooks:RunHooks
-
-# ]======[ Results ]======[
+# Result.
 
 ## A code used for test output
 var runcode:int = RetCode.TEST_OK
@@ -152,7 +157,7 @@ signal harness_finished
 #             ███████   ████   ███████ ██   ████    ██    ███████              #
 func                        __________EVENTS_________              ()->void:pass
 
-## Connected to the timer.timeout
+## Connected to the timeout timer.
 func _on_timer_timeout() -> void:
 	_timed_out = true
 	runcode = RetCode.TEST_FAILED
@@ -195,7 +200,7 @@ func _run_test() -> RetCode
 func                        ________OVERRIDES________              ()->void:pass
 
 func _init() -> void:
-	if opts != null:
+	if _opts != null:
 		_apply_opts()
 
 
@@ -205,14 +210,14 @@ func _run() -> void:
 	# NOTE: Maintain a reference to ourself, because no-one else will.
 	# Without this, we will be cleaned up before we have had time to do any
 	# asynchronous work.
-	# As this function itself is a void coroutine, without the cycleref it is
+	# As this function itself is a void coroutine, without the self pin it is
 	# yielded and immediately cleaned up by the engine.
-	cycleref = self
+	_cycleref = self
 
 	Log.lvl(Log.Level.NOTICE, "_run() as editorscript - Started", self)
 	run_harness()
 	await harness_finished
-	cycleref = null
+	_cycleref = null
 
 
 #         ███    ███ ███████ ████████ ██   ██  ██████  ██████  ███████         #
@@ -227,7 +232,7 @@ func                        _________METHODS_________              ()->void:pass
 func run_harness() -> void:
 	assert( Thread.is_main_thread(),
 		"A run_test() must not be called in a threaded context.\n" + \
-		"TestBase relies on the 'await' keyword and functionality which is." + \
+		"TR_Base relies on the 'await' keyword and functionality which is." + \
 		"not usable in a threaded context.\n")
 
 	_run_hold.open()
@@ -277,7 +282,7 @@ func run_harness() -> void:
 
 	# The budget covers setup, the body, and cleanup. A stuck setup has to lose.
 	harness_mark_msec = Time.get_ticks_msec()
-	timer.start(maxf(harness_time_s, 0.001))
+	_timer.start(maxf(harness_time_s, 0.001))
 
 	_run_setup()
 	if not _setup_done \
@@ -312,9 +317,9 @@ func run_harness() -> void:
 	and not _timed_out:
 		await test_finished
 
-	if is_instance_valid(timer) \
-	and not timer.is_stopped():
-		timer.stop()
+	if is_instance_valid(_timer) \
+	and not _timer.is_stopped():
+		_timer.stop()
 
 	if not _timed_out \
 	and _cleanup_error != OK:
@@ -390,11 +395,11 @@ func _tracy_supported() -> bool:
 	return Engine.has_singleton(&'Profiler')
 
 
-## Copy [member opts] onto the buttons, the service, and the Tracy hook.
+## Copy the options onto the log ceiling and the Tracy flag.
 func _apply_opts() -> void:
-	if opts != null:
-		local_lvl = opts.lvl
-		_test_tracy = opts.tracy and _tracy_supported() and TracyHooks.is_configured()
+	if _opts != null:
+		local_lvl = _opts.lvl
+		_test_tracy = _opts.tracy and _tracy_supported() and TracyHooks.is_configured()
 
 
 # Assign [member scene_tree] from the editor base, or from the main loop.
@@ -419,24 +424,24 @@ func _ensure_scene_tree() -> Error:
 
 
 func _ensure_timer() -> void:
-	# Find, or create our timer.
+	# Find or create the timeout timer.
 	var old_timer:Node = scene_tree.root.find_child(test_name, false)
 	if old_timer:
 		logd( "Error: Timer was not removed in last run.")
 		old_timer.queue_free()
 
-	timer = Timer.new()
-	timer.one_shot = true
-	timer.name = test_name
-	scene_tree.root.add_child(timer)
+	_timer = Timer.new()
+	_timer.one_shot = true
+	_timer.name = test_name
+	scene_tree.root.add_child(_timer)
 	@warning_ignore('return_value_discarded')
-	timer.timeout.connect( _on_timer_timeout )
+	_timer.timeout.connect( _on_timer_timeout )
 
 
 func _cleanup_harness() -> void:
-	if is_instance_valid(timer):
-		timer.queue_free()
-		timer = null
+	if is_instance_valid(_timer):
+		_timer.queue_free()
+		_timer = null
 
 
 # Forward [param text] when [member hooks] is installed.

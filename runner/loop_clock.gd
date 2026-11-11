@@ -1,5 +1,5 @@
 @tool
-extends Clock
+extends TR_Clock
 
 ## Budget counted from main-loop ticks. There is no timer node.
 
@@ -11,6 +11,7 @@ extends Clock
 # ██      ██   ██  ██████  ██      ███████ ██   ██    ██    ██ ███████ ███████ #
 func                        ________PROPERTIES_______              ()->void:pass
 
+# Seconds left. start sets it and tick counts it down.
 var _left: float = 0.0
 
 

@@ -1,5 +1,5 @@
 @tool
-class_name Clock
+class_name TR_Clock
 extends RefCounted
 
 ##[codeblock lang=text]
@@ -18,6 +18,7 @@ extends RefCounted
 # ██      ██   ██  ██████  ██      ███████ ██   ██    ██    ██ ███████ ███████ #
 func                        ________PROPERTIES_______              ()->void:pass
 
+## True between start and stop. The clock subclasses write this.
 var running: bool = false
 
 

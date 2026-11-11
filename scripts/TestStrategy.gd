@@ -1,6 +1,7 @@
 @tool
 @abstract
-class_name TestStrategy
+class_name TR_Strategy
+extends RefCounted
 
 # an attempt to make a multi-dimensional testing regime
 
@@ -10,6 +11,7 @@ enum Flags {
 	OK = 0,
 	ERROR = 1,
 }
+## Bit set of [enum Flags]. A strategy writes this as it runs.
 var flags:int = 0
 
 #       █████  ██████  ███████ ████████ ██████   █████   ██████ ████████       #

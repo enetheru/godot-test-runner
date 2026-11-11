@@ -7,7 +7,8 @@ extends EditorExportPlugin
 ## addon. [code]*[/code] skips the whole addon. This script and its
 ## [code].uid[/code] are always skipped.
 
-var ignore_patterns:Array[String] = []
+# Globs from [code].exportignore[/code]. Cleared and loaded at each export begin.
+var _ignore_patterns:Array[String] = []
 
 
 func _get_name() -> String:
@@ -22,7 +23,7 @@ func _export_begin(
 			_path:String,
 			_flags:int ) -> void:
 	# Clear so re-exports do not accumulate patterns.
-	ignore_patterns.clear()
+	_ignore_patterns.clear()
 	_load_ignore_file()
 
 
@@ -54,7 +55,7 @@ func _load_ignore_file() -> void:
 	while not file.eof_reached():
 		var line:String = file.get_line().strip_edges()
 		if line and not line.begins_with("#"):
-			ignore_patterns.append(line)
+			_ignore_patterns.append(line)
 
 
 func _export_file(
@@ -68,7 +69,7 @@ func _export_file(
 	if relative == "export_plugin.gd" or relative == "export_plugin.gd.uid":
 		skip()
 		return
-	for raw:String in ignore_patterns:
+	for raw:String in _ignore_patterns:
 		var pattern := raw
 		if pattern.begins_with("./"):
 			pattern = pattern.trim_prefix("./")

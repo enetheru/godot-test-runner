@@ -1,5 +1,4 @@
 @tool
-class_name RunGate
 extends RefCounted
 
 ## Depth of in-flight test runs.
@@ -9,16 +8,21 @@ extends RefCounted
 ## last hold is gone. This script does not know about Command Server.
 
 
+const _UID := "uid://c8rungatehold1"
+
 signal running_changed( running:bool )
 
-static var _shared:RunGate
+# Process-wide gate. shared creates it on first use.
+static var _shared:RefCounted
 
+# In-flight holds. Zero means idle.
 var _depth:int = 0
 
 
-static func shared() -> RunGate:
+static func shared() -> RefCounted:
 	if _shared == null:
-		_shared = RunGate.new()
+		var scr:GDScript = load( _UID ) as GDScript
+		_shared = scr.new()
 	return _shared
 
 
@@ -45,24 +49,28 @@ func pop() -> void:
 
 
 class Hold extends RefCounted:
-	var _gate:RunGate
+	# Gate this hold drops on leave or when it is freed.
+	var _push:Callable
+	var _pop:Callable
+	# False after leave. The predelete notice pops only while this is true.
 	var _open:bool = true
 
 	func _notification(what: int) -> void:
 		if what == NOTIFICATION_PREDELETE:
 			if _open:
-				_gate.pop()
+				_pop.call()
 
 
-	func _init( gate:RunGate ) -> void:
-		_gate = gate
+	func _init( gate:Object ) -> void:
+		_push = Callable( gate, &"push" )
+		_pop = Callable( gate, &"pop" )
 
 
 	func open() -> void:
 		if _open:
 			return
 		_open = true
-		_gate.push()
+		_push.call()
 
 
 	## Pop while this hold is still alive.
@@ -70,4 +78,4 @@ class Hold extends RefCounted:
 	func close() -> void:
 		if _open:
 			_open = false
-			_gate.pop()
+			_pop.call()

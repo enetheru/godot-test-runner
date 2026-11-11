@@ -1,5 +1,5 @@
 @tool
-class_name CaseSession
+class_name TR_CaseSession
 extends RefCounted
 
 ##[codeblock lang=text]
@@ -11,8 +11,8 @@ extends RefCounted
 ##[/codeblock]The run record shared by every host.
 ##
 ## Pass is 1 and fail is 0, matching [code]RetCode[/code]. A missing return
-## stays a failure. This record owns the hooks. [method Case._configure]
-## runs after the trait checks and before [method RunHooks.pre]. The clock
+## stays a failure. This record owns the hooks. [method TR_Case._configure]
+## runs after the trait checks and before [method TR_Hooks.pre]. The clock
 ## starts after pre, using [member budget_s]. A tree host installs
 ## [TracyCapture] after configure when hooks is still empty.
 ## [member capture_request] [code]0[/code] skips that install, [code]1[/code]
@@ -22,6 +22,7 @@ extends RefCounted
 const TreeClockScript = preload( "uid://d1tkhkfbyirfq" )
 const LoopClockScript = preload( "uid://jiyhdb8bmsbq" )
 const TracyHooks = preload( "uid://c38qii7m273x0" )
+const TR_Opts = preload( "uid://c3rwpcm55iy6r" )
 
 const TEST_FAILED := 0
 const TEST_OK := 1
@@ -30,8 +31,8 @@ const TEST_OK := 1
 const PATH_ENV := "CASE_PATHS"
 const REPORT_ENV := "CASE_REPORT"
 
-## Default case folder. Discovery reads [method TestRunnerOpts.cases_root].
-const CASE_ROOT := TestRunnerOpts.DEFAULT_CASES_DIR
+## Default case folder. Discovery reads [method TR_Opts.cases_root].
+const CASE_ROOT := TR_Opts.DEFAULT_CASES_DIR
 
 enum Host {
 	EDITOR,
@@ -56,39 +57,67 @@ enum Launch {
 # ██      ██   ██  ██████  ██      ███████ ██   ██    ██    ██ ███████ ███████ #
 func                        ________PROPERTIES_______              ()->void:pass
 
+# The host writes these before the case is accepted.
+
+## Process running this record. [enum Host.EDITOR] until the host replaces it.
 var host: Host = Host.EDITOR
-var flavour: String = ""
-var hint: bool = false
+
+## Scene tree for a tree host. Null on the tick clock.
 var tree: SceneTree
-var clock: Clock
+
+## TR_Clock the host installed.
+var clock: TR_Clock
+
+## True when this run started the main scene and must stop it afterwards.
 var main_scene_started: bool = false
 
-var runcode: int = TEST_FAILED
-var status: String = ""
-var reason: String = ""
+# [method _prepare] writes these when the case is accepted.
+
+## [code]editor[/code], [code]template_debug[/code], or [code]template_release[/code].
+var flavour: String = ""
+
+## [method Engine.is_editor_hint] at prepare time.
+var hint: bool = false
+
+## TR_Case script path.
 var path: String = ""
-var output: PackedStringArray = PackedStringArray()
+
+# Budget and hooks. The script constant fills the budget, then [method TR_Case._configure] may replace it.
 
 ## Seconds covering setup, the body, and cleanup. [code]BUDGET_S[/code] fills
-## this before [method Case._configure]. That step may replace it.
+## this before [method TR_Case._configure]. That step may replace it.
 var budget_s: float = 5.0
 
-## Null skips [method RunHooks.pre] and [method RunHooks.post].
-## The host or [method Case._configure] assigns it. The Tracy install
+## Null skips [method TR_Hooks.pre] and [method TR_Hooks.post].
+## The host or [method TR_Case._configure] assigns it. The Tracy install
 ## fills it only when it is still null.
-var hooks: RunHooks
+var hooks: TR_Hooks
 
 ## [code]-1[/code] honors the saved Tracy flag. [code]0[/code] skips capture.
-## [code]1[/code] installs it for this run.
+## [code]1[/code] installs it for this run. The caller sets this before the run.
 var capture_request: int = -1
+
+# Written while the case runs.
+
+## Milliseconds when the clock starts. The capture reads this for its pad.
+var harness_mark_msec: int = 0
 
 ## Phase lengths in seconds. Negative until that phase returns.
 var setup_s: float = -1.0
 var run_s: float = -1.0
 var cleanup_s: float = -1.0
 
-## Milliseconds when the clock starts. The capture reads this for its pad.
-var harness_mark_msec: int = 0
+## Pass is [constant TEST_OK]. A missing return stays [constant TEST_FAILED].
+var runcode: int = TEST_FAILED
+
+## Short result word: pass, fail, timeout, or refused.
+var status: String = ""
+
+## Why a refused run did not start. Empty once a run has started.
+var reason: String = ""
+
+## Lines [method _note] stored for the report.
+var output: PackedStringArray = PackedStringArray()
 
 
 #             ███████ ██    ██ ███████ ███    ██ ████████ ███████              #
@@ -127,13 +156,13 @@ func attach_loop() -> void:
 	clock = LoopClockScript.new()
 
 
-func instantiate( scr: Script ) -> Case:
+func instantiate( scr: Script ) -> TR_Case:
 	var native_name := str( script_const( scr, "NATIVE", "" ) )
 	if native_name != "":
 		if not ClassDB.class_exists( native_name ):
 			return null
 		var native: Object = ClassDB.instantiate( native_name )
-		if native is Case:
+		if native is TR_Case:
 			return native
 		return null
 
@@ -143,7 +172,7 @@ func instantiate( scr: Script ) -> Case:
 	if not gd.can_instantiate():
 		return null
 	var made: Variant = gd.new()
-	if made is Case:
+	if made is TR_Case:
 		return made
 	return null
 
@@ -163,7 +192,7 @@ func refuse( why: String, script_path: String = "" ) -> void:
 	_close()
 
 
-func run_sync( case: Case ) -> void:
+func run_sync( case: TR_Case ) -> void:
 	if not _open( case ):
 		return
 	_configure_case( case )
@@ -211,7 +240,7 @@ func run_sync( case: Case ) -> void:
 	_finish_sync()
 
 
-func run_await( case: Case ) -> void:
+func run_await( case: TR_Case ) -> void:
 	if not _open( case ):
 		return
 	_configure_case( case )
@@ -275,7 +304,7 @@ func line() -> String:
 #       ██ ██   ████    ██    ███████ ██   ██ ██   ████ ██   ██ ███████        #
 func                        ________INTERNAL_________              ()->void:pass
 
-func _open( case: Case ) -> bool:
+func _open( case: TR_Case ) -> bool:
 	var scr := _case_script( case )
 	var script_path := ""
 	if scr != null:
@@ -313,11 +342,11 @@ func _arm() -> void:
 	if not clock.fired.is_connected( _on_clock ):
 		var err := clock.fired.connect( _on_clock )
 		if err != OK:
-			push_error( "CaseSession._arm: connect failed (%s)" % error_string( err ) )
+			push_error( "TR_CaseSession._arm: connect failed (%s)" % error_string( err ) )
 	clock.start( budget_s )
 
 
-func _configure_case( case: Case ) -> void:
+func _configure_case( case: TR_Case ) -> void:
 	# Void, and not awaited. An override that awaits is outside this step.
 	case._configure()
 
@@ -426,7 +455,7 @@ func _release_hooks() -> void:
 	hooks = null
 
 
-func _case_script( case: Case ) -> Script:
+func _case_script( case: TR_Case ) -> Script:
 	var found: Variant = case.get_script()
 	if found is Script:
 		var scr: Script = found
@@ -437,7 +466,7 @@ func _case_script( case: Case ) -> Script:
 func _note( text: String ) -> void:
 	# append returns the Error. OK is 0, so false means the line was stored.
 	if output.append( text ):
-		push_error( "CaseSession._note: append failed" )
+		push_error( "TR_CaseSession._note: append failed" )
 	if hooks != null:
 		hooks.message( text )
 
@@ -499,13 +528,13 @@ static func launch_host( id: Launch ) -> Host:
 			return Host.PLAY
 
 
-## [param scr] extends [Case] and is not [Case] itself.
+## [param scr] extends [TR_Case] and is not [TR_Case] itself.
 static func is_case_script( scr: Script ) -> bool:
-	if scr == null or scr.get_global_name() == &"Case":
+	if scr == null or scr.get_global_name() == &"TR_Case":
 		return false
 	var current: Script = scr.get_base_script()
 	while current != null:
-		if current.get_global_name() == &"Case":
+		if current.get_global_name() == &"TR_Case":
 			return true
 		current = current.get_base_script()
 	return false
@@ -522,7 +551,7 @@ static func is_case_path( script_path: String ) -> bool:
 	return is_case_script( scr )
 
 
-## Case script file names directly inside [param folder].
+## TR_Case script file names directly inside [param folder].
 static func case_files( folder: String ) -> Array[String]:
 	var out: Array[String] = []
 	for file_name: String in DirAccess.get_files_at( folder ):
@@ -541,7 +570,7 @@ static func clear_report() -> void:
 		return
 	var err := DirAccess.remove_absolute( report_path )
 	if err != OK:
-		push_error( "CaseSession.clear_report: %s" % error_string( err ) )
+		push_error( "TR_CaseSession.clear_report: %s" % error_string( err ) )
 
 
 ## Print [param text] and keep its first line for the panel.
@@ -562,7 +591,7 @@ static func report( text: String ) -> void:
 		return
 	var first := text.split( "\n" )[0]
 	if not file.store_line( first ):
-		push_error( "CaseSession.report: write failed" )
+		push_error( "TR_CaseSession.report: write failed" )
 
 
 static func case_paths() -> PackedStringArray:
@@ -587,7 +616,7 @@ static func _script_paths( items: PackedStringArray ) -> PackedStringArray:
 static func _take( paths: PackedStringArray, item: String ) -> PackedStringArray:
 	# append returns the Error. OK is 0, so false means the path was stored.
 	if paths.append( item ):
-		push_error( "CaseSession._take: append failed" )
+		push_error( "TR_CaseSession._take: append failed" )
 	return paths
 
 

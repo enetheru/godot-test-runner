@@ -143,15 +143,16 @@ const _USAGE_BITS:Dictionary = {
 # ██      ██   ██  ██████  ██      ███████ ██   ██    ██    ██ ███████ ███████ #
 func                        ________PROPERTIES_______              ()->void:pass
 
+# [method _init] sets the prefix, the target, and the script filename.
 var _prefix:String
 var _target:Object
-## Script filename used as the category marker for exported props.
+# Script filename. Exported properties use it as their category marker.
 var _target_file:String
 
-## Full ProjectSettings path → target property name (grouping prefixes).
-var setting_prop_map:Dictionary = {}
+# Full ProjectSettings path to the target property. Binding fills this.
+var _setting_prop_map:Dictionary = {}
 
-## True while [method push_target] writes ProjectSettings.
+# True while push_target writes ProjectSettings.
 var _pushing:bool = false
 
 ## TODO: per-setting callables when a setting changes.
@@ -359,7 +360,7 @@ func add_target_properties() -> void:
 			continue
 
 		# Map full path → original property name (needed when prefixes trim).
-		setting_prop_map[setting_full] = property_name
+		_setting_prop_map[setting_full] = property_name
 
 		var setting_info:Dictionary = {
 			&"name": setting_full,
@@ -384,9 +385,9 @@ func update_target() -> void:
 	if _pushing:
 		return
 	Log.lvl( Log.Level.TRACE, "update_target", self )
-	for setting_name:String in setting_prop_map.keys():
+	for setting_name:String in _setting_prop_map.keys():
 		var new_val:Variant = ProjectSettings.get(setting_name)
-		var prop_name:StringName = setting_prop_map[setting_name]
+		var prop_name:StringName = _setting_prop_map[setting_name]
 		if new_val == _target.get(prop_name):
 			continue
 		Log.lvl( Log.Level.TRACE, "Updating '%s' : %s" % [setting_name, new_val], self )
@@ -396,12 +397,12 @@ func update_target() -> void:
 
 ## Write mapped target properties into ProjectSettings and save once.
 func push_target() -> void:
-	if not is_instance_valid(_target) or setting_prop_map.is_empty():
+	if not is_instance_valid(_target) or _setting_prop_map.is_empty():
 		return
 	_pushing = true
 	var dirty:bool = false
-	for setting_full:String in setting_prop_map.keys():
-		var prop_name:StringName = setting_prop_map[setting_full]
+	for setting_full:String in _setting_prop_map.keys():
+		var prop_name:StringName = _setting_prop_map[setting_full]
 		var property_value:Variant = _target.get(prop_name)
 		if ProjectSettings.has_setting(setting_full) \
 		and ProjectSettings.get_setting(setting_full) == property_value:

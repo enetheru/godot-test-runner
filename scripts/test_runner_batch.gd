@@ -1,10 +1,11 @@
 @tool
 extends Node
 
-## Runs one batch for [TestRunnerService].
+## Runs one batch for the test runner service.
 ## Sequential by default. Parallel launches every script without awaiting the previous.
 
 const Shared = preload( "uid://ccrhkvl5ptefw" )
+const TR_Service = preload( "uid://dmaf85hvsuhon" )
 const RetCode = Shared.RetCode
 
 const MAX_OUTPUT_LINES:int = 200
@@ -17,7 +18,8 @@ const MAX_OUTPUT_LINES:int = 200
 # ██      ██   ██  ██████  ██      ███████ ██   ██    ██    ██ ███████ ███████ #
 func                        ________PROPERTIES_______              ()->void:pass
 
-var service:TestRunnerService
+## Owner. The service assigns this before [method start].
+var service:TR_Service
 
 
 #         ███    ███ ███████ ████████ ██   ██  ██████  ██████  ███████         #
@@ -200,7 +202,7 @@ func _run_one( script_path:String, use_lvl:int, use_tracy:bool = false ) -> Dict
 		entry["output"] = ["Cannot instantiate: %s" % script_path]
 		return entry
 
-	if CaseSession.is_case_script( script ):
+	if TR_CaseSession.is_case_script( script ):
 		return await _run_case( script, entry, use_tracy )
 
 	var instance_v:Object = script.new()
@@ -208,10 +210,10 @@ func _run_one( script_path:String, use_lvl:int, use_tracy:bool = false ) -> Dict
 		entry["output"] = ["script.new() returned null: %s" % script_path]
 		return entry
 
-	# Prefer TestBase; accept duck-typed run_test + runcode/output.
-	if not instance_v is TestBase \
+	# Prefer TR_Base; accept duck-typed run_test + runcode/output.
+	if not instance_v is TR_Base \
 	and not instance_v.has_method( &"run_test" ):
-		entry["output"] = ["Not a TestBase (no run_test): %s" % script_path]
+		entry["output"] = ["Not a TR_Base (no run_test): %s" % script_path]
 		if instance_v is Object and is_instance_valid( instance_v ):
 			( instance_v as Object ).free()
 		return entry
@@ -221,7 +223,7 @@ func _run_one( script_path:String, use_lvl:int, use_tracy:bool = false ) -> Dict
 	# 0 skips capture even when the panel toggle is on. 1 installs it for this run.
 	_try_set( instance, "capture_request", 1 if use_tracy else 0 )
 
-	# Hold a hard ref for the await lifetime (same idea as TestBase.cycleref).
+	# Hold a hard ref for the await lifetime (same idea as TR_Base._cycleref).
 	var _keep:Object = instance
 	@warning_ignore( "redundant_await" )
 	if instance.has_method( &"run_harness" ):
@@ -238,7 +240,7 @@ func _run_one( script_path:String, use_lvl:int, use_tracy:bool = false ) -> Dict
 
 	entry["retcode"] = retcode
 	var status:String = "OK" if retcode == RetCode.TEST_OK else "FAILED"
-	# TestBase max_runtime leaves a distinctive log line when the timer wins.
+	# TR_Base max_runtime leaves a distinctive log line when the timer wins.
 	for line:Variant in output:
 		if str( line ).contains( "Timeout was reached" ):
 			status = "TIMEOUT"
@@ -254,10 +256,10 @@ func _run_one( script_path:String, use_lvl:int, use_tracy:bool = false ) -> Dict
 	return entry
 
 
-## Editor host. [param use_tracy] is the command override, same as TestBase.
+## Editor host. [param use_tracy] is the command override, same as TR_Base.
 func _run_case( script:GDScript, entry:Dictionary, use_tracy:bool ) -> Dictionary:
-	var session := CaseSession.new()
-	session.host = CaseSession.Host.EDITOR
+	var session := TR_CaseSession.new()
+	session.host = TR_CaseSession.Host.EDITOR
 	session.capture_request = 1 if use_tracy else 0
 	var scene_tree:SceneTree = get_tree()
 	if scene_tree == null:
@@ -268,7 +270,7 @@ func _run_case( script:GDScript, entry:Dictionary, use_tracy:bool ) -> Dictionar
 		entry["output"] = ["No SceneTree for case: %s" % str( entry.get( "path", "" ) )]
 		return entry
 	session.attach_tree( scene_tree )
-	var body:Case = session.instantiate( script )
+	var body:TR_Case = session.instantiate( script )
 	if body == null:
 		entry["output"] = ["Not a case: %s" % str( entry.get( "path", "" ) )]
 		return entry

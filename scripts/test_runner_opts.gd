@@ -1,5 +1,4 @@
 @tool
-class_name TestRunnerOpts
 extends Resource
 
 ## Run flags for the TestRunner dock.
@@ -13,7 +12,9 @@ const DEFAULT_CASES_DIR:String = "res://cases"
 const _OPTS_PATH:String = "res://addons/enetheru.test-runner/res/opts.tres"
 const Log = preload( "uid://br7jtx5cntuan" )
 
-static var _shared:TestRunnerOpts
+const _UID := "uid://c3rwpcm55iy6r"
+
+static var _shared:Resource
 
 
 @export_category("Logging")
@@ -26,7 +27,7 @@ static var _shared:TestRunnerOpts
 		emit_changed()
 
 @export_category("Discovery")
-## Folder of TestBase scripts. Empty uses [constant DEFAULT_TESTS_DIR].
+## Folder of TR_Base scripts. Empty uses [constant DEFAULT_TESTS_DIR].
 @export_dir var tests_dir:String = DEFAULT_TESTS_DIR:
 	set(value):
 		if tests_dir == value:
@@ -34,7 +35,7 @@ static var _shared:TestRunnerOpts
 		tests_dir = value
 		emit_changed()
 
-## Folder of Case scripts. Empty uses [constant DEFAULT_CASES_DIR].
+## Folder of TR_Case scripts. Empty uses [constant DEFAULT_CASES_DIR].
 @export_dir var cases_dir:String = DEFAULT_CASES_DIR:
 	set(value):
 		if cases_dir == value:
@@ -113,24 +114,33 @@ static var _shared:TestRunnerOpts
 		emit_changed()
 
 
-static func shared() -> TestRunnerOpts:
+static func _script() -> GDScript:
+	return load( _UID ) as GDScript
+
+
+static func shared() -> Resource:
 	if _shared != null and is_instance_valid( _shared ):
 		return _shared
 	var loaded:Resource = load( _OPTS_PATH )
-	if loaded is TestRunnerOpts:
+	var scr:GDScript = _script()
+	if loaded != null and loaded.get_script() == scr:
 		_shared = loaded
 	else:
-		_shared = TestRunnerOpts.new()
-		push_error( "TestRunnerOpts.shared: missing %s" % _OPTS_PATH )
+		_shared = scr.new()
+		push_error( "TR_Opts.shared: missing %s" % _OPTS_PATH )
 	return _shared
 
 
 static func tests_root() -> String:
-	return _clean_dir( shared().tests_dir, DEFAULT_TESTS_DIR )
+	var raw:Variant = shared().get( &"tests_dir" )
+	var text:String = raw if raw is String else ""
+	return _clean_dir( text, DEFAULT_TESTS_DIR )
 
 
 static func cases_root() -> String:
-	return _clean_dir( shared().cases_dir, DEFAULT_CASES_DIR )
+	var raw:Variant = shared().get( &"cases_dir" )
+	var text:String = raw if raw is String else ""
+	return _clean_dir( text, DEFAULT_CASES_DIR )
 
 
 static func _clean_dir( raw:String, fallback:String ) -> String:
