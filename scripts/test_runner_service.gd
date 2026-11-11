@@ -1,21 +1,21 @@
 @tool
+class_name TestRunnerService
 extends Node
 
 ## Headless façade for TestRunner discovery and batch runs.
 ## Owned by the TestRunner EditorPlugin. Safe for Command Server callers.
-## A [Case] script runs through [CaseSession] in this editor. TestBase stays
-## on [method _run_one].
+## A [Case] script runs through [CaseSession] in this editor. The batch
+## runner owns each script.
 ## UI (main_panel) remains the Tree view; this object owns agent-facing state.
 ## Default batch is sequential; [code]opts.parallel[/code] matches the UI
 ## (launch every suite without awaiting the previous).
 
 const Shared = preload( "shared.gd" )
 const Log = preload( "../logging.gd" )
-const RetCode = Shared.RetCode
+const BatchScript = preload( "test_runner_batch.gd" )
 
 const LAST_JSON_PATH:String = "user://test_runner_last.json"
 const RESULTS_DIR:String = "user://test_runner_results"
-const MAX_OUTPUT_LINES:int = 200
 const DEFAULT_TEST_PATH:String = TestRunnerOpts.DEFAULT_TESTS_DIR
 const DEFAULT_CASE_PATH:String = TestRunnerOpts.DEFAULT_CASES_DIR
 
@@ -217,8 +217,34 @@ func begin_run(
 			} )
 		return
 	is_running = true
-	# Deferred so this Node owns the async stack (caller is sync begin_execute).
-	_run_batch.call_deferred( paths, opts, on_done )
+	# Deferred so the runner owns the async stack (caller is sync begin_execute).
+	_runner().call_deferred( &"start", paths, opts, on_done )
+
+
+func report_progress( current:int, total:int, entry:Dictionary ) -> void:
+	batch_progress.emit( current, total, entry )
+
+
+func report_finished( results:Dictionary ) -> void:
+	batch_finished.emit( results )
+
+
+## Write the batch json and log. Called by the runner after each script.
+func store_results( results:Dictionary, run_id:String ) -> void:
+	var abs_dir:String = ProjectSettings.globalize_path( RESULTS_DIR )
+	var mk:Error = DirAccess.make_dir_recursive_absolute( abs_dir )
+	if mk != OK and not DirAccess.dir_exists_absolute( abs_dir ):
+		push_warning( "TestRunnerService: cannot create %s" % RESULTS_DIR )
+
+	var json_path:String = RESULTS_DIR.path_join( "%s.json" % run_id )
+	var text_path:String = RESULTS_DIR.path_join( "%s.log" % run_id )
+	results["log_path"] = json_path
+
+	var json_text:String = JSON.stringify( results, "\t" )
+	_write_text( json_path, json_text )
+	_write_text( LAST_JSON_PATH, json_text )
+	_write_text( text_path, _format_log( results ) )
+
 
 ## Format list_tests for human TCP reply (non-JSON).
 func format_list_text() -> String:
@@ -352,6 +378,16 @@ func format_results_reply( results:Dictionary, heading:String = "TESTS_RUN compl
 #       ██ ██   ████    ██    ███████ ██   ██ ██   ████ ██   ██ ███████        #
 func                        ________INTERNAL_________              ()->void:pass
 
+func _runner() -> Node:
+	var found:Node = get_node_or_null( ^"Runner" )
+	if found != null:
+		return found
+	var created:Node = BatchScript.new()
+	created.name = "Runner"
+	created.set( &"service", self )
+	add_child( created )
+	return created
+
 ## Rescan when the configured folders changed, or when nothing is cached yet.
 func _ensure_roots() -> void:
 	if groups.is_empty() \
@@ -444,298 +480,6 @@ func _group_spec_matches( gd:Dictionary, spec:String ) -> bool:
 	var folder:String = str( gd.get( "folder", "" ) )
 	return folder.get_file().to_lower() == want \
 	or folder.get_file().to_pascal_case().to_lower() == want
-
-func _group_for_path( script_path:String ) -> String:
-	var best:String = ""
-	var best_len:int = -1
-	for g:Variant in groups:
-		var gd:Dictionary = g
-		var folder:String = str( gd.get( "folder", "" ) )
-		if script_path.begins_with( folder + "/" ) \
-		or script_path.begins_with( folder + "\\" ):
-			if folder.length() > best_len:
-				best = str( gd.get( "group", "" ) )
-				best_len = folder.length()
-	if not best.is_empty():
-		return best
-	var parent:String = script_path.get_base_dir().get_file()
-	return parent.to_pascal_case()
-
-func _run_batch(
-			paths:PackedStringArray,
-			opts:Dictionary,
-			on_done:Callable ) -> void:
-	var use_lvl:int = lvl
-	var got_lvl:Variant = opts.get( "lvl", lvl )
-	if got_lvl is int:
-		use_lvl = got_lvl
-	var use_parallel:bool = opts.get( "parallel", false )
-	var stamp:String = Time.get_datetime_string_from_system( false, true )
-	stamp = stamp.replace( ":", "-" ).replace( " ", "_" )
-	var run_id:String = "run_%s" % stamp
-
-	var results:Dictionary = {
-		"ok": true,
-		"ran": 0,
-		"passed": 0,
-		"failed": 0,
-		"lvl": use_lvl,
-		"parallel": use_parallel,
-		"run_id": run_id,
-		"log_path": "",
-		"tests": [],
-	}
-
-	var use_tracy:bool = opts.get( "tracy", false )
-	results["tracy"] = use_tracy
-	if use_parallel:
-		_run_batch_parallel( paths, use_lvl, use_tracy, results, run_id, on_done )
-	else:
-		await _run_batch_sequential( paths, use_lvl, use_tracy, results, run_id )
-		_finish_batch( results, on_done )
-
-func _run_batch_sequential(
-			paths:PackedStringArray,
-			use_lvl:int,
-			use_tracy:bool,
-			results:Dictionary,
-			run_id:String ) -> void:
-	var total:int = paths.size()
-	var i:int = 0
-	for path:String in paths:
-		i += 1
-		var entry:Dictionary = await _run_one( path, use_lvl, use_tracy )
-		var tests_arr:Array = results["tests"]
-		tests_arr.append( entry )
-		results["ran"] = results["ran"] + 1
-		if entry.get( "retcode", RetCode.TEST_FAILED ) == RetCode.TEST_OK:
-			results["passed"] = results["passed"] + 1
-		else:
-			results["failed"] = results["failed"] + 1
-			results["ok"] = false
-		batch_progress.emit( i, total, entry )
-		# Persist after each test so a crash mid-batch keeps partial progress.
-		_write_results_files( results, run_id )
-
-## Parallel batch: same launch model as TestRunner UI process_selection.
-## Why flag exists: sequential-only could not prove suite isolation under real
-## concurrent load (UI Run-all). Default remains sequential.
-func _run_batch_parallel(
-			paths:PackedStringArray,
-			use_lvl:int,
-			use_tracy:bool,
-			results:Dictionary,
-			run_id:String,
-			on_done:Callable ) -> void:
-	var total:int = paths.size()
-	# Array box so each worker mutates one shared remaining-count (int by value would not).
-	var left:Array = [ total ]
-	# Slots preserve discovery order in the reply even when finish order differs.
-	var slots:Array = []
-	assert( slots.resize( total ) )
-	for i:int in total:
-		slots[i] = null
-	results["tests"] = slots
-
-	if total == 0:
-		_finish_batch( results, on_done )
-		return
-
-	for i:int in total:
-		# No await — fire concurrent coroutines like process_test(file_item).
-		@warning_ignore("missing_await")
-		_run_one_parallel_slot(
-				paths[i],
-				i,
-				total,
-				use_lvl,
-				use_tracy,
-				results,
-				run_id,
-				left,
-				on_done
-		)
-
-func _run_one_parallel_slot(
-			path:String,
-			index:int,
-			total:int,
-			use_lvl:int,
-			use_tracy:bool,
-			results:Dictionary,
-			run_id:String,
-			left:Array,
-			on_done:Callable ) -> void:
-	var entry:Dictionary = await _run_one( path, use_lvl, use_tracy )
-	var tests_arr:Array = results["tests"]
-	tests_arr[index] = entry
-
-	if entry.get( "retcode", RetCode.TEST_FAILED ) == RetCode.TEST_OK:
-		results["passed"] = results["passed"] + 1
-	else:
-		results["failed"] = results["failed"] + 1
-		results["ok"] = false
-	results["ran"] = results["ran"] + 1
-
-	var done_n:int = results["ran"]
-	batch_progress.emit( done_n, total, entry )
-	_write_results_files( results, run_id )
-
-	left[0] = left[0] - 1
-	if left[0] <= 0:
-		_finish_batch( results, on_done )
-
-func _finish_batch( results:Dictionary, on_done:Callable ) -> void:
-	last_results = results
-	last_log_path = str( results.get( "log_path", "" ) )
-	is_running = false
-	batch_finished.emit( results )
-	if on_done.is_valid():
-		on_done.call( results )
-
-func _run_one( script_path:String, use_lvl:int, use_tracy:bool = false ) -> Dictionary:
-	var group_name:String = _group_for_path( script_path )
-	var entry:Dictionary = {
-		"path": script_path,
-		"group": group_name,
-		"retcode": RetCode.TEST_FAILED,
-		"status": "FAILED",
-		"output": [],
-	}
-
-	if not ResourceLoader.exists( script_path ) and not FileAccess.file_exists( script_path ):
-		entry["output"] = ["Resource not found: %s" % script_path]
-		return entry
-
-	var script_res:Resource = ResourceLoader.load(
-			script_path,
-			"",
-			ResourceLoader.CACHE_MODE_REPLACE
-	)
-	if script_res == null or not ( script_res is GDScript ):
-		entry["output"] = ["Failed to load GDScript: %s" % script_path]
-		return entry
-
-	var script:GDScript = script_res
-	if not script.can_instantiate():
-		entry["output"] = ["Cannot instantiate: %s" % script_path]
-		return entry
-
-	if CaseSession.is_case_script( script ):
-		return await _run_case( script, entry, use_tracy )
-
-	var instance_v:Object = script.new()
-	if instance_v == null:
-		entry["output"] = ["script.new() returned null: %s" % script_path]
-		return entry
-
-	# Prefer TestBase; accept duck-typed run_test + runcode/output.
-	if not instance_v is TestBase \
-	and not instance_v.has_method( &"run_test" ):
-		entry["output"] = ["Not a TestBase (no run_test): %s" % script_path]
-		if instance_v is Object and is_instance_valid( instance_v ):
-			( instance_v as Object ).free()
-		return entry
-
-	var instance:Object = instance_v
-	_try_set( instance, "local_lvl", use_lvl )
-	# 0 skips capture even when the panel toggle is on. 1 installs it for this run.
-	_try_set( instance, "capture_request", 1 if use_tracy else 0 )
-
-	# Hold a hard ref for the await lifetime (same idea as TestBase.cycleref).
-	var _keep:Object = instance
-	@warning_ignore( "redundant_await" )
-	if instance.has_method( &"run_harness" ):
-		await instance.call( &"run_harness" )
-	elif instance.has_method( &"run_test" ):
-		await instance.call( &"run_test" )
-	else:
-		entry["output"] = ["run_test missing after type check: %s" % script_path]
-		return entry
-
-	var retcode:int = instance.get( "runcode" )
-	var out_v:Array = instance.get( "output" )
-	var output:Array = out_v.duplicate()
-
-	entry["retcode"] = retcode
-	var status:String = "OK" if retcode == RetCode.TEST_OK else "FAILED"
-	# TestBase max_runtime leaves a distinctive log line when the timer wins.
-	for line:Variant in output:
-		if str( line ).contains( "Timeout was reached" ):
-			status = "TIMEOUT"
-			break
-	if instance.get( "_timed_out" ) == true:
-		status = "TIMEOUT"
-	entry["status"] = status
-	entry["output"] = _cap_output( output )
-
-	_keep = null
-	if is_instance_valid( instance ) and not ( instance is RefCounted ):
-		instance.free()
-	return entry
-
-## Editor host. [param use_tracy] is the command override, same as TestBase.
-func _run_case( script:GDScript, entry:Dictionary, use_tracy:bool ) -> Dictionary:
-	var session := CaseSession.new()
-	session.host = CaseSession.Host.EDITOR
-	session.capture_request = 1 if use_tracy else 0
-	var scene_tree:SceneTree = get_tree()
-	if scene_tree == null:
-		var loop:MainLoop = Engine.get_main_loop()
-		if loop is SceneTree:
-			scene_tree = loop
-	if scene_tree == null:
-		entry["output"] = ["No SceneTree for case: %s" % str( entry.get( "path", "" ) )]
-		return entry
-	session.attach_tree( scene_tree )
-	var body:Case = session.instantiate( script )
-	if body == null:
-		entry["output"] = ["Not a case: %s" % str( entry.get( "path", "" ) )]
-		return entry
-	await session.run_await( body )
-	var code:int = session.runcode
-	entry["retcode"] = code
-	var label:String = "OK" if code == RetCode.TEST_OK else "FAILED"
-	if session.status == "timeout":
-		label = "TIMEOUT"
-	entry["status"] = label
-	var lines:Array = []
-	for row:String in session.line().split( "\n" ):
-		lines.append( row )
-	entry["output"] = _cap_output( lines )
-	return entry
-
-func _try_set( obj:Object, prop:String, value:Variant ) -> void:
-	if obj == null:
-		return
-	for p:Dictionary in obj.get_property_list():
-		if str( p.get( "name", "" ) ) == prop:
-			obj.set( prop, value )
-			return
-
-func _cap_output( lines:Array ) -> Array:
-	if lines.size() <= MAX_OUTPUT_LINES:
-		return lines.duplicate()
-	var start:int = lines.size() - MAX_OUTPUT_LINES
-	var capped:Array = ["… (%d earlier lines omitted)" % start]
-	for i:int in range( start, lines.size() ):
-		capped.append( lines[i] )
-	return capped
-
-func _write_results_files( results:Dictionary, run_id:String ) -> void:
-	var abs_dir:String = ProjectSettings.globalize_path( RESULTS_DIR )
-	var mk:Error = DirAccess.make_dir_recursive_absolute( abs_dir )
-	if mk != OK and not DirAccess.dir_exists_absolute( abs_dir ):
-		push_warning( "TestRunnerService: cannot create %s" % RESULTS_DIR )
-
-	var json_path:String = RESULTS_DIR.path_join( "%s.json" % run_id )
-	var text_path:String = RESULTS_DIR.path_join( "%s.log" % run_id )
-	results["log_path"] = json_path
-
-	var json_text:String = JSON.stringify( results, "\t" )
-	_write_text( json_path, json_text )
-	_write_text( LAST_JSON_PATH, json_text )
-	_write_text( text_path, _format_log( results ) )
 
 func _result_lvl( results:Dictionary ) -> int:
 	var got:Variant = results.get( "lvl", Log.Level.DEFAULT )
