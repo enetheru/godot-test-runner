@@ -1,6 +1,6 @@
 # Test Runner
 
-This panel runs the test scripts under the tests folder and the case scripts under the cases folder. Those folders are tests_dir and cases_dir in the project settings.
+This panel runs the test scripts under the tests folder and the case scripts under each cases folder. Those folders are tests_dir and cases_dirs in the project settings.
 
 ## Play
 

@@ -63,8 +63,8 @@ var _play_icon: Texture2D
 # Folder of TR_Base scripts.
 var _test_path:String = TR_Opts.DEFAULT_TESTS_DIR
 
-# Folder of TR_Case scripts.
-var _case_path:String = TR_Opts.DEFAULT_CASES_DIR
+# Folders of TR_Case scripts.
+var _case_paths:PackedStringArray = PackedStringArray([TR_Opts.DEFAULT_CASES_DIR])
 
 # Discovery filter. Keeps test*.gd and skips generated scripts.
 var _test_script_filter:Callable = default_script_filter
@@ -209,11 +209,11 @@ func _on_options_pressed() -> void:
 
 func _on_opts_changed() -> void:
 	var prev_tests:String = _test_path
-	var prev_cases:String = _case_path
+	var prev_cases:PackedStringArray = _case_paths
 	_apply_opts()
 	if not is_node_ready():
 		return
-	if prev_tests == _test_path and prev_cases == _case_path:
+	if prev_tests == _test_path and prev_cases == _case_paths:
 		return
 	if is_instance_valid( _service ) and _service.has_method( &"reload" ):
 		_service.call( &"reload" )
@@ -658,7 +658,7 @@ func _tracy_supported() -> bool:
 ## Copy [member opts] onto the service and the Tracy hook.
 func _apply_opts() -> void:
 	_test_path = TR_Opts.tests_root()
-	_case_path = TR_Opts.cases_root()
+	_case_paths = TR_Opts.cases_roots()
 	if opts != null:
 		_test_lvl = opts.lvl
 		_test_tracy = opts.tracy
@@ -719,31 +719,37 @@ func _store_flag( prop:StringName, value:Variant ) -> void:
 	_apply_opts()
 
 
-func _case_root() -> String:
-	var root_v:Variant = _case_path
-	if root_v is String:
-		var text:String = root_v
-		if not text.is_empty():
-			return text
-	_case_path = TR_Opts.cases_root()
-	return _case_path
-
-
 func _cases_branch() -> TestDef:
-	var root:String = _case_root()
+	var roots:PackedStringArray = _case_paths
+	if roots.is_empty():
+		roots = TR_Opts.cases_roots()
+		_case_paths = roots
 	var branch:TestDef = TestDef.new()
 	branch.name = "Cases"
-	branch.folder_path = root
-	branch.test_scripts = TR_CaseSession.case_files( root )
+	if roots.size() == 1:
+		_fill_case_root( branch, roots[0] )
+	else:
+		for root:String in roots:
+			var child:TestDef = TestDef.new()
+			child.name = TR_Opts.case_leaf( root, roots )
+			_fill_case_root( child, root )
+			if child.test_scripts.is_empty() and child.children.is_empty():
+				continue
+			branch.children.append( child )
+	if branch.test_scripts.is_empty() and branch.children.is_empty():
+		return null
+	return branch
+
+
+func _fill_case_root( def:TestDef, root:String ) -> void:
+	def.folder_path = root
+	def.test_scripts = TR_CaseSession.case_files( root )
 	var tree:Array[Dictionary] = TestScan.collect_test_tree(
 			root, _max_scan_depth, _gd_file_filter )
 	for node:Dictionary in tree:
 		var child:TestDef = _prune_case_def( _test_def_from_node( node ) )
 		if child != null:
-			branch.children.append( child )
-	if branch.test_scripts.is_empty() and branch.children.is_empty():
-		return null
-	return branch
+			def.children.append( child )
 
 
 func _prune_case_def( def:TestDef ) -> TestDef:

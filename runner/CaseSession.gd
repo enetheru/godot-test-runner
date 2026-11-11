@@ -33,7 +33,7 @@ const REPORT_ENV: String = "CASE_REPORT"
 ## Absolute project root. A packed run has no [code]res://[/code] directory of its own.
 const PROJECT_ENV: String = "CASE_PROJECT"
 
-## Default case folder. Discovery reads [method TR_Opts.cases_root].
+## Default case folder. Discovery reads [method TR_Opts.cases_roots].
 const CASE_ROOT: String = TR_Opts.DEFAULT_CASES_DIR
 
 enum Host {

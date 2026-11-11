@@ -32,8 +32,8 @@ func                        ________PROPERTIES_______              ()->void:pass
 ## Folder of TR_Base scripts.
 var test_path:String = DEFAULT_TEST_PATH
 
-## Folder of TR_Case scripts.
-var case_path:String = DEFAULT_CASE_PATH
+## Folders of TR_Case scripts.
+var case_paths:PackedStringArray = PackedStringArray([DEFAULT_CASE_PATH])
 
 ## Junction and symlink cycle guard. Not a group-name depth limit.
 var max_scan_depth:int = TestScan.DEFAULT_MAX_SCAN_DEPTH
@@ -99,10 +99,10 @@ func set_lvl( level:int ) -> void:
 	lvl = level
 	flags_changed.emit()
 
-## Rescan [member test_path] and [member case_path], then refresh [member groups].
+## Rescan [member test_path] and [member case_paths], then refresh [member groups].
 func reload() -> void:
 	test_path = TR_Opts.tests_root()
-	case_path = TR_Opts.cases_root()
+	case_paths = TR_Opts.cases_roots()
 	groups = collect_groups( test_path )
 	groups.append_array( _case_groups() )
 	tests_reloaded.emit()
@@ -268,10 +268,11 @@ func store_results( results:Dictionary, run_id:String ) -> void:
 ## Format list_tests for human TCP reply (non-JSON).
 func format_list_text() -> String:
 	var list:Array = list_tests()
+	var cases:String = ", ".join( case_paths )
 	if list.is_empty():
-		return "OK: no groups under %s or %s" % [test_path, _case_root()]
+		return "OK: no groups under %s or %s" % [test_path, cases]
 	var lines:Array = []
-	lines.append( "OK: tests under %s, cases under %s" % [test_path, _case_root()] )
+	lines.append( "OK: tests under %s, cases under %s" % [test_path, cases] )
 	for g:Variant in list:
 		var gd:Dictionary = g
 		var scripts:Array = gd.get( "scripts", [] )
@@ -412,18 +413,8 @@ func _runner() -> Node:
 func _ensure_roots() -> void:
 	if groups.is_empty() \
 	or test_path != TR_Opts.tests_root() \
-	or case_path != TR_Opts.cases_root():
+	or case_paths != TR_Opts.cases_roots():
 		reload()
-
-## [member case_path] stays empty on a node that was born before the property.
-func _case_root() -> String:
-	var root_v:Variant = case_path
-	if root_v is String:
-		var text:String = root_v
-		if not text.is_empty():
-			return text
-	case_path = TR_Opts.cases_root()
-	return case_path
 
 func _groups_from_tree( nodes:Array, prefix:String ) -> Array:
 	var out:Array = []
@@ -452,20 +443,34 @@ func _groups_from_tree( nodes:Array, prefix:String ) -> Array:
 			out.append_array( _groups_from_tree( kids, gname ) )
 	return out
 
-## TR_Case groups under [member case_path]. Names start with [code]Cases[/code].
+## TR_Case groups under [member case_paths]. Names start with [code]Cases[/code].
 func _case_groups() -> Array:
+	var roots:PackedStringArray = case_paths
+	if roots.is_empty():
+		roots = TR_Opts.cases_roots()
+		case_paths = roots
 	var out:Array = []
-	var root:String = _case_root()
+	if roots.size() == 1:
+		out.append_array( _case_groups_under( roots[0], "Cases" ) )
+		return out
+	for root:String in roots:
+		var label:String = "Cases/" + TR_Opts.case_leaf( root, roots )
+		out.append_array( _case_groups_under( root, label ) )
+	return out
+
+
+func _case_groups_under( root:String, label:String ) -> Array:
+	var out:Array = []
 	var root_files:Array[String] = TR_CaseSession.case_files( root )
 	if not root_files.is_empty():
 		out.append( {
-			"group": "Cases",
+			"group": label,
 			"folder": root,
 			"scripts": _script_rows( root, root_files ),
 		} )
 	var tree:Array[Dictionary] = TestScan.collect_test_tree(
 			root, max_scan_depth, _gd_file_filter, _folder_filter )
-	var nested:Array = _groups_from_tree( tree, "Cases" )
+	var nested:Array = _groups_from_tree( tree, label )
 	for g:Variant in nested:
 		if not ( g is Dictionary ):
 			continue

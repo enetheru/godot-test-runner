@@ -331,8 +331,10 @@ func _case_paths_in( paths: PackedStringArray ) -> PackedStringArray:
 
 
 func _in_case_root( path: String ) -> bool:
-	var root: String = TR_Opts.cases_root()
-	return path == root or path.begins_with( root + "/" )
+	for root: String in TR_Opts.cases_roots():
+		if path == root or path.begins_with( root + "/" ):
+			return true
+	return false
 
 
 func _collect_cases( dir_path: String, cases: PackedStringArray ) -> PackedStringArray:

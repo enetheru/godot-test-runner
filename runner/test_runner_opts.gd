@@ -35,12 +35,12 @@ static var _shared:Resource
 		tests_dir = value
 		emit_changed()
 
-## Folder of TR_Case scripts. Empty uses [constant DEFAULT_CASES_DIR].
-@export_dir var cases_dir:String = DEFAULT_CASES_DIR:
+## Folders of TR_Case scripts. An empty list uses [constant DEFAULT_CASES_DIR].
+@export_dir var cases_dirs:PackedStringArray = PackedStringArray([DEFAULT_CASES_DIR]):
 	set(value):
-		if cases_dir == value:
+		if cases_dirs == value:
 			return
-		cases_dir = value
+		cases_dirs = value
 		emit_changed()
 
 @export_category("Tracy")
@@ -137,10 +137,38 @@ static func tests_root() -> String:
 	return _clean_dir( text, DEFAULT_TESTS_DIR )
 
 
-static func cases_root() -> String:
-	var raw:Variant = shared().get( &"cases_dir" )
-	var text:String = raw if raw is String else ""
-	return _clean_dir( text, DEFAULT_CASES_DIR )
+static func cases_roots() -> PackedStringArray:
+	var raw:Variant = shared().get( &"cases_dirs" )
+	var found:PackedStringArray = PackedStringArray()
+	if raw is PackedStringArray:
+		var listed:PackedStringArray = raw
+		found = listed
+	var out:PackedStringArray = PackedStringArray()
+	for entry:String in found:
+		var cleaned:String = _clean_dir( entry, "" )
+		if cleaned.is_empty() or out.has( cleaned ):
+			continue
+		if out.append( cleaned ):
+			push_error( "TR_Opts.cases_roots: append failed" )
+			break
+	if out.is_empty():
+		if out.append( DEFAULT_CASES_DIR ):
+			push_error( "TR_Opts.cases_roots: append failed" )
+	return out
+
+
+## Last path segment. The full path when two folders share that name.
+static func case_leaf( root:String, roots:PackedStringArray ) -> String:
+	var leaf:String = root.get_file()
+	if leaf.is_empty():
+		return root
+	var copies:int = 0
+	for other:String in roots:
+		if other.get_file() == leaf:
+			copies += 1
+	if copies > 1:
+		return root
+	return leaf
 
 
 static func _clean_dir( raw:String, fallback:String ) -> String:
