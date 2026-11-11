@@ -28,6 +28,7 @@ const TEST_OK := 1
 
 ## Set by the editor menu before Play. The shell passes paths after `--` instead.
 const PATH_ENV := "CASE_PATHS"
+const REPORT_ENV := "CASE_REPORT"
 
 ## Default case folder. Discovery reads [method TestRunnerOpts.cases_root].
 const CASE_ROOT := TestRunnerOpts.DEFAULT_CASES_DIR
@@ -36,6 +37,15 @@ enum Host {
 	EDITOR,
 	PLAY,
 	SCRIPT,
+}
+
+## Menu row and launch id. [enum Host] is the process that row starts.
+enum Launch {
+	EDITORSCRIPT,
+	PLAY_EDITOR,
+	PLAY_DEBUG,
+	PLAY_RELEASE,
+	HEADLESS,
 }
 
 
@@ -478,6 +488,17 @@ func _host_name() -> String:
 #                 ███████    ██    ██   ██    ██    ██  ██████                 #
 func                        __________STATIC_________              ()->void:pass
 
+## The process [param id] starts. The three play rows are all [constant Host.PLAY].
+static func launch_host( id: Launch ) -> Host:
+	match id:
+		Launch.HEADLESS:
+			return Host.SCRIPT
+		Launch.EDITORSCRIPT:
+			return Host.EDITOR
+		_:
+			return Host.PLAY
+
+
 ## [param scr] extends [Case] and is not [Case] itself.
 static func is_case_script( scr: Script ) -> bool:
 	if scr == null or scr.get_global_name() == &"Case":
@@ -508,6 +529,40 @@ static func case_files( folder: String ) -> Array[String]:
 		if file_name.ends_with( ".gd" ) and is_case_path( folder.path_join( file_name ) ):
 			out.append( file_name )
 	return out
+
+
+static func report_file() -> String:
+	return ProjectSettings.globalize_path( "user://case_report.txt" )
+
+
+static func clear_report() -> void:
+	var report_path := report_file()
+	if not FileAccess.file_exists( report_path ):
+		return
+	var err := DirAccess.remove_absolute( report_path )
+	if err != OK:
+		push_error( "CaseSession.clear_report: %s" % error_string( err ) )
+
+
+## Print [param text] and keep its first line for the panel.
+static func report( text: String ) -> void:
+	print( text )
+	var report_path := OS.get_environment( REPORT_ENV )
+	if report_path == "":
+		return
+	var prior := ""
+	if FileAccess.file_exists( report_path ):
+		prior = FileAccess.get_file_as_string( report_path )
+	var file := FileAccess.open( report_path, FileAccess.WRITE )
+	if file == null:
+		return
+	if prior != "" and not file.store_string( prior ):
+		return
+	if prior != "" and not prior.ends_with( "\n" ) and not file.store_string( "\n" ):
+		return
+	var first := text.split( "\n" )[0]
+	if not file.store_line( first ):
+		push_error( "CaseSession.report: write failed" )
 
 
 static func case_paths() -> PackedStringArray:

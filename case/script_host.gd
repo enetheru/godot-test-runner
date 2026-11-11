@@ -36,7 +36,7 @@ func _initialize() -> void:
 	var session := CaseSessionScript.new()
 	session.host = CaseSessionScript.Host.SCRIPT
 	session.refuse( "no path" )
-	print( session.line() )
+	CaseSessionScript.report( session.line() )
 
 
 func _process( delta: float ) -> bool:
@@ -61,5 +61,5 @@ func _process( delta: float ) -> bool:
 	else:
 		session.refuse( "not a script", path )
 
-	print( session.line() )
+	CaseSessionScript.report( session.line() )
 	return _index >= _paths.size()

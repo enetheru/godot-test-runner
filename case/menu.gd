@@ -14,9 +14,6 @@ const PlayPack = preload( "play_pack.gd" )
 
 const PLAYER_SCENE := "res://addons/enetheru.test-runner/case/player.tscn"
 const SCRIPT_HOST := "res://addons/enetheru.test-runner/case/script_host.gd"
-const PLAY_EDITOR := 10
-const PLAY_DEBUG := 11
-const PLAY_RELEASE := 12
 
 
 # ██████  ██████   ██████  ██████  ███████ ██████  ████████ ██ ███████ ███████ #
@@ -55,25 +52,25 @@ func                        __________EVENTS_________              ()->void:pass
 func _on_method( id: int ) -> void:
 	var paths := _picked.duplicate()
 	match id:
-		CaseSession.Host.EDITOR:
+		CaseSession.Launch.EDITORSCRIPT:
 			# Hide already queue_frees this popup. Awaiting in this callback
 			# ends that walk when the first script returns.
 			if editor_runner.is_valid():
 				editor_runner.call_deferred( paths )
 			else:
 				Callable( self, &"_run_editor" ).call_deferred( paths )
-		CaseSession.Host.SCRIPT:
+		CaseSession.Launch.HEADLESS:
 			_run_script_host( paths )
 
 
 func _on_play( id: int ) -> void:
 	var paths := _picked.duplicate()
 	match id:
-		PLAY_EDITOR:
+		CaseSession.Launch.PLAY_EDITOR:
 			_run_play( paths )
-		PLAY_DEBUG:
+		CaseSession.Launch.PLAY_DEBUG:
 			_run_template( paths, true )
-		PLAY_RELEASE:
+		CaseSession.Launch.PLAY_RELEASE:
 			_run_template( paths, false )
 
 
@@ -125,15 +122,15 @@ func make_run_menu( paths: PackedStringArray, title: String = "" ) -> PopupMenu:
 	if not title.is_empty():
 		popup.add_separator( title )
 	var play := PopupMenu.new()
-	play.add_item( "Editor", PLAY_EDITOR )
-	play.add_item( "template_debug", PLAY_DEBUG )
-	play.add_item( "template_release", PLAY_RELEASE )
+	play.add_item( "Editor", CaseSession.Launch.PLAY_EDITOR )
+	play.add_item( "template_debug", CaseSession.Launch.PLAY_DEBUG )
+	play.add_item( "template_release", CaseSession.Launch.PLAY_RELEASE )
 	var play_err := play.id_pressed.connect( _on_play )
 	if play_err != OK:
 		push_error( "menu.make_run_menu: play connect failed (%s)" % error_string( play_err ) )
-	popup.add_item( "EditorScript", CaseSession.Host.EDITOR )
+	popup.add_item( "EditorScript", CaseSession.Launch.EDITORSCRIPT )
 	popup.add_submenu_node_item( "Play", play )
-	popup.add_item( "Headless -s", CaseSession.Host.SCRIPT )
+	popup.add_item( "Headless -s", CaseSession.Launch.HEADLESS )
 	var err := popup.id_pressed.connect( _on_method )
 	if err != OK:
 		push_error( "menu.make_run_menu: connect failed (%s)" % error_string( err ) )
@@ -170,16 +167,20 @@ func run_script( scr: Script ) -> void:
 
 
 ## Play targets and Headless. The panel walks EditorScript itself.
+## The report file receives one `case ` line per script.
 func launch( id: int, paths: PackedStringArray ) -> void:
+	CaseSessionScript.clear_report()
+	OS.set_environment( CaseSessionScript.REPORT_ENV, CaseSessionScript.report_file() )
 	match id:
-		PLAY_EDITOR:
+		CaseSession.Launch.PLAY_EDITOR:
 			_run_play( paths )
-		PLAY_DEBUG:
+		CaseSession.Launch.PLAY_DEBUG:
 			_run_template( paths, true )
-		PLAY_RELEASE:
+		CaseSession.Launch.PLAY_RELEASE:
 			_run_template( paths, false )
-		CaseSession.Host.SCRIPT:
+		CaseSession.Launch.HEADLESS:
 			_run_script_host( paths )
+	OS.unset_environment( CaseSessionScript.REPORT_ENV )
 
 
 #       ██ ███    ██ ████████ ███████ ██████  ███    ██  █████  ██             #
@@ -194,7 +195,7 @@ func _editor_item_menu( title: String ) -> PopupMenu:
 	var popup := PopupMenu.new()
 	if not title.is_empty():
 		popup.add_separator( title )
-	popup.add_item( "EditorScript", CaseSession.Host.EDITOR )
+	popup.add_item( "EditorScript", CaseSession.Launch.EDITORSCRIPT )
 	var err := popup.id_pressed.connect( _on_method )
 	if err != OK:
 		push_error( "menu._editor_item_menu: connect failed (%s)" % error_string( err ) )

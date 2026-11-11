@@ -6,6 +6,8 @@
 [ext_resource type="Texture2D" uid="uid://clvd7lgq1sdn3" path="res://addons/enetheru.test-runner/res/trash-can.svg" id="6_blb3b"]
 [ext_resource type="Texture2D" uid="uid://dngr7cckmvug" path="res://addons/enetheru.test-runner/res/circle-question.svg" id="7_5fedl"]
 [ext_resource type="Theme" path="res://addons/enetheru.test-runner/ui/main_panel_theme.tres" id="8_theme"]
+[ext_resource type="Texture2D" uid="uid://5p4ooo08nes1" path="res://addons/enetheru.test-runner/res/triangle-down.svg" id="9_down"]
+[ext_resource type="Script" uid="uid://dvvnrjmjouxec" path="res://addons/enetheru.test-runner/ui/test_tree.gd" id="9_tree"]
 
 [node name="TestRunner" type="VBoxContainer" unique_id=1145744051]
 anchors_preset = 15
@@ -28,6 +30,7 @@ size_flags_vertical = 0
 
 [node name="Run" type="Button" parent="Buttons/Left" unique_id=613329788]
 layout_mode = 2
+tooltip_text = "Start the checked runs for the rows on screen."
 theme_override_colors/icon_normal_color = Color(1, 1, 1, 1)
 theme_override_colors/icon_focus_color = Color(1, 1, 1, 1)
 theme_override_colors/icon_pressed_color = Color(1, 1, 1, 1)
@@ -35,7 +38,6 @@ theme_override_colors/icon_hover_color = Color(1, 1, 1, 1)
 theme_override_colors/icon_hover_pressed_color = Color(1, 1, 1, 1)
 theme_override_colors/icon_disabled_color = Color(1, 1, 1, 1)
 theme_override_constants/icon_max_width = 24
-tooltip_text = "Start the checked runs for the rows on screen."
 text = "Play"
 icon = ExtResource("2_73jry")
 
@@ -46,13 +48,32 @@ text = "Reload Tests
 "
 icon = ExtResource("5_k3utk")
 
-[node name="RunKind" type="MenuButton" parent="Buttons/Left"]
+[node name="RunKind" type="MenuButton" parent="Buttons/Left" unique_id=1151253157]
 layout_mode = 2
-flat = false
-theme_type_variation = &"Button"
 tooltip_text = "Checked runs start from Play. The list shows the rows those runs can start."
+theme_type_variation = &"Button"
+theme_override_constants/icon_max_width = 24
 text = "EditorScript"
-switch_on_hover = false
+icon = ExtResource("9_down")
+flat = false
+icon_alignment = 2
+item_count = 5
+popup/item_0/text = "EditorScript"
+popup/item_0/checkable = 1
+popup/item_0/checked = true
+popup/item_0/id = 0
+popup/item_1/text = "Play Editor"
+popup/item_1/checkable = 1
+popup/item_1/id = 1
+popup/item_2/text = "Play template_debug"
+popup/item_2/checkable = 1
+popup/item_2/id = 2
+popup/item_3/text = "Play template_release"
+popup/item_3/checkable = 1
+popup/item_3/id = 3
+popup/item_4/text = "Headless -s"
+popup/item_4/checkable = 1
+popup/item_4/id = 4
 
 [node name="Right" type="HBoxContainer" parent="Buttons" unique_id=726647946]
 layout_mode = 2
@@ -61,9 +82,9 @@ size_flags_vertical = 0
 alignment = 2
 
 [node name="StatsCounter" type="RichTextLabel" parent="Buttons/Right" unique_id=1611664917]
-theme_type_variation = &"ResultStats"
 layout_mode = 2
 size_flags_vertical = 4
+theme_type_variation = &"ResultStats"
 bbcode_enabled = true
 text = "Stats"
 fit_content = true
@@ -79,7 +100,7 @@ text = "Clear Results
 "
 icon = ExtResource("6_blb3b")
 
-[node name="Options" type="Button" parent="Buttons/Right"]
+[node name="Options" type="Button" parent="Buttons/Right" unique_id=1998880326]
 layout_mode = 2
 tooltip_text = "Open the options resource in the Inspector."
 text = "Options"
@@ -94,33 +115,33 @@ layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
-[node name="TestList" type="VBoxContainer" parent="TestOutput"]
+[node name="TestList" type="VBoxContainer" parent="TestOutput" unique_id=1893393293]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 size_flags_stretch_ratio = 0.5
 
-[node name="FilterRow" type="HBoxContainer" parent="TestOutput/TestList"]
+[node name="FilterRow" type="HBoxContainer" parent="TestOutput/TestList" unique_id=483875285]
 layout_mode = 2
 size_flags_horizontal = 3
 alignment = 1
 
-[node name="FilterLabel" type="Label" parent="TestOutput/TestList/FilterRow"]
+[node name="FilterLabel" type="Label" parent="TestOutput/TestList/FilterRow" unique_id=289324939]
 layout_mode = 2
 text = "Filter"
 
-[node name="Filter" type="LineEdit" parent="TestOutput/TestList/FilterRow"]
+[node name="Filter" type="LineEdit" parent="TestOutput/TestList/FilterRow" unique_id=1348985332]
 layout_mode = 2
 size_flags_horizontal = 3
-placeholder_text = "*glob*"
 tooltip_text = "Glob on the row name. * and ? are wildcards. Other text matches anywhere in the name."
+placeholder_text = "*glob*"
 clear_button_enabled = true
 
 [node name="TestsTree" type="Tree" parent="TestOutput/TestList" unique_id=111155159]
-theme_type_variation = &"TestTree"
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
+theme_type_variation = &"TestTree"
 theme_override_constants/outline_size = 4
 theme_override_constants/draw_guides = 4
 theme_override_constants/draw_relationship_lines = 4
@@ -128,10 +149,10 @@ theme_override_constants/relationship_line_width = 2
 theme_override_constants/parent_hl_line_width = 2
 theme_override_constants/children_hl_line_width = 2
 theme_override_constants/parent_hl_line_margin = 4
-columns = 2
+columns = 7
 column_titles_visible = true
 select_mode = 2
-scroll_horizontal_enabled = false
+script = ExtResource("9_tree")
 
 [node name="InfoList" type="VBoxContainer" parent="TestOutput" unique_id=1667280722]
 layout_mode = 2
@@ -152,35 +173,26 @@ theme_override_constants/separation = 8
 [node name="PopupPanel" type="PopupPanel" parent="." unique_id=2062072510]
 initial_position = 1
 size = Vector2i(760, 640)
-mouse_passthrough = false
 wrap_controls = false
 
 [node name="HelpText" type="RichTextLabel" parent="PopupPanel" unique_id=201366319]
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = 12.0
-offset_top = 12.0
-offset_right = -12.0
-offset_bottom = -12.0
+offset_left = 4.0
+offset_top = 4.0
+offset_right = 756.0
+offset_bottom = 636.0
 grow_horizontal = 2
 grow_vertical = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 focus_mode = 2
-mouse_filter = 0
 bbcode_enabled = true
-fit_content = false
-scroll_active = true
-scroll_following = false
-autowrap_mode = 3
 
 [connection signal="pressed" from="Buttons/Left/Run" to="." method="_on_run_pressed"]
 [connection signal="pressed" from="Buttons/Left/Reload" to="." method="_on_reload_pressed"]
-[connection signal="text_changed" from="TestOutput/TestList/FilterRow/Filter" to="." method="_on_filter_text_changed"]
 [connection signal="pressed" from="Buttons/Right/ClearResults" to="." method="_on_clear_results_pressed"]
 [connection signal="pressed" from="Buttons/Right/Options" to="." method="_on_options_pressed"]
 [connection signal="pressed" from="Buttons/Right/Help" to="." method="_on_help_pressed"]
-[connection signal="button_clicked" from="TestOutput/TestList/TestsTree" to="." method="_on_tests_tree_button_clicked"]
-[connection signal="gui_input" from="TestOutput/TestList/TestsTree" to="." method="_on_tests_tree_gui_input"]
-[connection signal="multi_selected" from="TestOutput/TestList/TestsTree" to="." method="_on_tests_tree_multi_selected"]
+[connection signal="text_changed" from="TestOutput/TestList/FilterRow/Filter" to="." method="_on_filter_text_changed"]

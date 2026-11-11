@@ -24,7 +24,7 @@ The right side of the bar reads the counts in words: folders, results, failures,
 
 ## Level
 
-Each run adds its own card, and earlier cards stay in the list. The status word is the card title, colored from the result theme, with the script name beside it. The log sits in that card, under the title, and it renders the failure markup. ERROR and WARNING labels in that log take their colors from the result theme. A failure line is a link to that script. A failure's log is included. A pass includes its log when the level includes Info. The Result column takes its colors from the panel theme.
+Each run adds its own card, and earlier cards stay in the list. The status word is the card title, colored from the result theme, with the script name beside it. The log sits in that card, under the title, and it renders the failure markup. ERROR and WARNING labels in that log take their colors from the result theme. A failure line is a link to that script. A failure's log is included. A pass includes its log when the level includes Info. The Status column reads the real state of the row. Each run kind is an icon in the column title. A green check or a red cross is that kind's result, and clicking the cell starts that run. A kind the row cannot run shows a minus, and its tooltip says that run is not available for this test.
 
 ## Clear Results
 
