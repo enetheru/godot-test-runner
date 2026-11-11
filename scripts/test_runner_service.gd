@@ -69,11 +69,9 @@ func default_script_filter( filename:String ) -> bool:
 		and filename.ends_with( ".gd" ) \
 		and not filename.ends_with( "_generated.gd" )
 
-
 func default_folder_filter( _folder_path:String ) -> bool:
 	# Do not require scripts in this folder — children may hold them.
 	return true
-
 
 ## Inclusive ceiling for the next run. Notice is quiet.
 func set_lvl( level:int ) -> void:
@@ -81,7 +79,6 @@ func set_lvl( level:int ) -> void:
 		return
 	lvl = level
 	flags_changed.emit()
-
 
 ## Rescan [member test_path] and [member case_path], then refresh [member groups].
 func reload() -> void:
@@ -91,32 +88,11 @@ func reload() -> void:
 	groups.append_array( _case_groups() )
 	tests_reloaded.emit()
 
-
-## Rescan when the configured folders changed, or when nothing is cached yet.
-func _ensure_roots() -> void:
-	if groups.is_empty() \
-	or test_path != TestRunnerOpts.tests_root() \
-	or case_path != TestRunnerOpts.cases_root():
-		reload()
-
-
-## [member case_path] stays empty on a node that was born before the property.
-func _case_root() -> String:
-	var root_v:Variant = case_path
-	if root_v is String:
-		var text:String = root_v
-		if not text.is_empty():
-			return text
-	case_path = TestRunnerOpts.cases_root()
-	return case_path
-
-
 ## Clear last batch results (in-memory). Does not delete log files.
 func clear_results() -> void:
 	last_results = {}
 	last_log_path = ""
 	results_cleared.emit()
-
 
 func list_tests() -> Array:
 	_ensure_roots()
@@ -131,76 +107,6 @@ func collect_groups( path:String = "" ) -> Array:
 	var tree:Array[Dictionary] = Shared.collect_test_tree(
 			root, max_scan_depth, _script_filter, Callable(), _folder_filter )
 	return _groups_from_tree( tree, "" )
-
-
-func _groups_from_tree( nodes:Array, prefix:String ) -> Array:
-	var out:Array = []
-	for node_v:Variant in nodes:
-		if not node_v is Dictionary:
-			continue
-		var node:Dictionary = node_v
-		var leaf:String = str( node.get( "name", "" ) )
-		var gname:String = leaf if prefix.is_empty() else prefix + "/" + leaf
-		var scripts_raw:Array = node.get( "test_scripts", [] )
-		if not scripts_raw.is_empty():
-			var scripts:Array = []
-			var folder_path:String = str( node.get( "folder_path", "" ) )
-			for f:Variant in scripts_raw:
-				scripts.append( {
-					"file": str( f ),
-					"path": folder_path.path_join( str( f ) ),
-				} )
-			out.append( {
-				"group": gname,
-				"folder": folder_path,
-				"scripts": scripts,
-			} )
-		var kids:Array = node.get( "children", [] )
-		if not kids.is_empty():
-			out.append_array( _groups_from_tree( kids, gname ) )
-	return out
-
-
-## Case groups under [member case_path]. Names start with [code]Cases[/code].
-func _case_groups() -> Array:
-	var out:Array = []
-	var root:String = _case_root()
-	var root_files:Array[String] = CaseSession.case_files( root )
-	if not root_files.is_empty():
-		out.append( {
-			"group": "Cases",
-			"folder": root,
-			"scripts": _script_rows( root, root_files ),
-		} )
-	var tree:Array[Dictionary] = Shared.collect_test_tree(
-			root, max_scan_depth, _gd_file_filter, Callable(), _folder_filter )
-	var nested:Array = _groups_from_tree( tree, "Cases" )
-	for g:Variant in nested:
-		if not ( g is Dictionary ):
-			continue
-		var gd:Dictionary = g
-		var folder:String = str( gd.get( "folder", "" ) )
-		var files:Array[String] = CaseSession.case_files( folder )
-		if files.is_empty():
-			continue
-		gd["scripts"] = _script_rows( folder, files )
-		out.append( gd )
-	return out
-
-
-func _script_rows( folder:String, files:Array ) -> Array:
-	var scripts:Array = []
-	for f:Variant in files:
-		var file_name:String = str( f )
-		scripts.append( {
-			"file": file_name,
-			"path": folder.path_join( file_name ),
-		} )
-	return scripts
-
-
-func _gd_file_filter( filename:String ) -> bool:
-	return filename.ends_with( ".gd" )
 
 
 ## Resolve a run target into script paths.
@@ -274,12 +180,10 @@ func resolve_targets( spec:String ) -> Dictionary:
 		}
 	return { &"paths": hits, &"error": "" }
 
-
 func get_last_results() -> Dictionary:
 	if not last_results.is_empty():
 		return last_results.duplicate( true )
 	return _load_last_json()
-
 
 ## Start a batch. Completes via [param on_done](results:Dictionary).
 ## [param opts.parallel]: if true, launch all suites like the TestRunner UI
@@ -316,6 +220,246 @@ func begin_run(
 	# Deferred so this Node owns the async stack (caller is sync begin_execute).
 	_run_batch.call_deferred( paths, opts, on_done )
 
+## Format list_tests for human TCP reply (non-JSON).
+func format_list_text() -> String:
+	var list:Array = list_tests()
+	if list.is_empty():
+		return "OK: no groups under %s or %s" % [test_path, _case_root()]
+	var lines:Array = []
+	lines.append( "OK: tests under %s, cases under %s" % [test_path, _case_root()] )
+	for g:Variant in list:
+		var gd:Dictionary = g
+		var scripts:Array = gd.get( "scripts", [] )
+		lines.append( "  [%s] %s (%d)" % [
+				str( gd.get( "group", "" ) ),
+				str( gd.get( "folder", "" ) ),
+				scripts.size(),
+		] )
+		for s:Variant in scripts:
+			var sd:Dictionary = s
+			lines.append( "    - %s" % str( sd.get( "file", "" ) ) )
+	return "\n".join( lines )
+
+## One line per suite + recap. Used by TCP/MCP and log files.
+func format_summary_table( results:Dictionary, bbcode:bool = true ) -> String:
+	var tests_v:Array = results.get( "tests", [] )
+	var passed:int = 0
+	passed = results.get( "passed", 0 )
+	var failed:int = 0
+	failed = results.get( "failed", 0 )
+	var lines:PackedStringArray = PackedStringArray()
+	var _n:int = lines.append( "[b]Summary[/b]" if bbcode else "Summary" )
+	for t:Variant in tests_v:
+		if not ( t is Dictionary ):
+			continue
+		var td:Dictionary = t
+		var status:String = str( td.get( "status", "" ) )
+		var group:String = str( td.get( "group", "" ) )
+		var path:String = str( td.get( "path", "" ) )
+		var file:String = path.get_file()
+		if file.is_empty():
+			file = path
+		if bbcode:
+			var color:String = "yellowgreen" if status == "OK" else "tomato"
+			_n = lines.append( "  [color=%s]%s[/color]  %s  [i]%s[/i]" % [
+					color, status, group, file ] )
+		else:
+			_n = lines.append( "  %s  %s  %s" % [status, group, file] )
+	var recap:String = "%d passed, %d failed" % [passed, failed]
+	_n = lines.append( "" )
+	if bbcode:
+		var recap_color:String = "yellowgreen" if failed == 0 else "tomato"
+		_n = lines.append( "[b][color=%s]%s[/color][/b]" % [recap_color, recap] )
+	else:
+		_n = lines.append( recap )
+	if failed > 0:
+		for t:Variant in tests_v:
+			if not ( t is Dictionary ):
+				continue
+			var td:Dictionary = t
+			if str( td.get( "status", "" ) ) == "OK":
+				continue
+			var path:String = str( td.get( "path", "" ) )
+			if bbcode:
+				_n = lines.append( "  [color=tomato]FAIL[/color]  %s" % path )
+			else:
+				_n = lines.append( "  FAIL  %s" % path )
+	return "\n".join( lines )
+
+## Serialize results for TCP/MCP: OK line + BBCode body.
+## Multi-suite runs print a compact table first. Per-suite logs follow only
+## for failures, or for every suite when info is open / a single test.
+## Full JSON stays in [member last_log_path] — do not dump it here; `[` in
+## JSON arrays is not BBCode and [method @GlobalScope.print_rich] would eat it.
+func format_results_reply( results:Dictionary, heading:String = "TESTS_RUN complete" ) -> String:
+	if results.has( "error" ) and str( results.get( "error", "" ) ) != "":
+		var err:String = str( results["error"] )
+		var tests:Array = results.get( "tests" )
+		if tests.is_empty():
+			return "ERROR: %s" % err
+	# Always OK: prefix for parseable multi-line; body carries status in BBCode.
+	# Agent exit codes: godot-cmd treats OK: as success of the *command*, not tests.
+	var header:String = "OK: %s ran=%s passed=%s failed=%s log=%s" % [
+			heading,
+			str( results.get( "ran", 0 ) ),
+			str( results.get( "passed", 0 ) ),
+			str( results.get( "failed", 0 ) ),
+			str( results.get( "log_path", last_log_path ) ),
+	]
+	var lines:PackedStringArray = PackedStringArray()
+	var _n:int = lines.append( header )
+	var tests_v:Array = results.get( "tests", [] )
+	var use_lvl:int = _result_lvl( results )
+	var dump_all:bool = Log.allows( use_lvl, Log.Level.INFO ) \
+			or tests_v.size() <= 1
+	if tests_v.size() > 1:
+		_n = lines.append( "" )
+		_n = lines.append( format_summary_table( results, true ) )
+	var dumped:bool = false
+	for t:Variant in tests_v:
+		if not ( t is Dictionary ):
+			continue
+		var td:Dictionary = t
+		var status:String = str( td.get( "status", "" ) )
+		if not dump_all and status == "OK":
+			continue
+		dumped = true
+		var color:String = "yellowgreen" if status == "OK" else "tomato"
+		_n = lines.append( "" )
+		_n = lines.append( "[b]%s[/b]  [color=%s]%s[/color]  [i]%s[/i]" % [
+				str( td.get( "group", "" ) ),
+				color,
+				status,
+				str( td.get( "path", "" ) ),
+		] )
+		for o:Variant in td.get( "output", [] ):
+			_n = lines.append( "\t%s" % _color_output_line( str( o ) ) )
+	if dumped and tests_v.size() > 1:
+		var failed:int = 0
+		failed = results.get( "failed", 0 )
+		var passed:int = 0
+		passed = results.get( "passed", 0 )
+		var recap:String = "%d passed, %d failed" % [passed, failed]
+		var recap_color:String = "yellowgreen" if failed == 0 else "tomato"
+		_n = lines.append( "" )
+		_n = lines.append( "[b][color=%s]%s[/color][/b]" % [recap_color, recap] )
+	return "\n".join( lines )
+
+#       ██ ███    ██ ████████ ███████ ██████  ███    ██  █████  ██             #
+#       ██ ████   ██    ██    ██      ██   ██ ████   ██ ██   ██ ██             #
+#       ██ ██ ██  ██    ██    █████   ██████  ██ ██  ██ ███████ ██             #
+#       ██ ██  ██ ██    ██    ██      ██   ██ ██  ██ ██ ██   ██ ██             #
+#       ██ ██   ████    ██    ███████ ██   ██ ██   ████ ██   ██ ███████        #
+func                        ________INTERNAL_________              ()->void:pass
+
+## Rescan when the configured folders changed, or when nothing is cached yet.
+func _ensure_roots() -> void:
+	if groups.is_empty() \
+	or test_path != TestRunnerOpts.tests_root() \
+	or case_path != TestRunnerOpts.cases_root():
+		reload()
+
+## [member case_path] stays empty on a node that was born before the property.
+func _case_root() -> String:
+	var root_v:Variant = case_path
+	if root_v is String:
+		var text:String = root_v
+		if not text.is_empty():
+			return text
+	case_path = TestRunnerOpts.cases_root()
+	return case_path
+
+func _groups_from_tree( nodes:Array, prefix:String ) -> Array:
+	var out:Array = []
+	for node_v:Variant in nodes:
+		if not node_v is Dictionary:
+			continue
+		var node:Dictionary = node_v
+		var leaf:String = str( node.get( "name", "" ) )
+		var gname:String = leaf if prefix.is_empty() else prefix + "/" + leaf
+		var scripts_raw:Array = node.get( "test_scripts", [] )
+		if not scripts_raw.is_empty():
+			var scripts:Array = []
+			var folder_path:String = str( node.get( "folder_path", "" ) )
+			for f:Variant in scripts_raw:
+				scripts.append( {
+					"file": str( f ),
+					"path": folder_path.path_join( str( f ) ),
+				} )
+			out.append( {
+				"group": gname,
+				"folder": folder_path,
+				"scripts": scripts,
+			} )
+		var kids:Array = node.get( "children", [] )
+		if not kids.is_empty():
+			out.append_array( _groups_from_tree( kids, gname ) )
+	return out
+
+## Case groups under [member case_path]. Names start with [code]Cases[/code].
+func _case_groups() -> Array:
+	var out:Array = []
+	var root:String = _case_root()
+	var root_files:Array[String] = CaseSession.case_files( root )
+	if not root_files.is_empty():
+		out.append( {
+			"group": "Cases",
+			"folder": root,
+			"scripts": _script_rows( root, root_files ),
+		} )
+	var tree:Array[Dictionary] = Shared.collect_test_tree(
+			root, max_scan_depth, _gd_file_filter, Callable(), _folder_filter )
+	var nested:Array = _groups_from_tree( tree, "Cases" )
+	for g:Variant in nested:
+		if not ( g is Dictionary ):
+			continue
+		var gd:Dictionary = g
+		var folder:String = str( gd.get( "folder", "" ) )
+		var files:Array[String] = CaseSession.case_files( folder )
+		if files.is_empty():
+			continue
+		gd["scripts"] = _script_rows( folder, files )
+		out.append( gd )
+	return out
+
+func _script_rows( folder:String, files:Array ) -> Array:
+	var scripts:Array = []
+	for f:Variant in files:
+		var file_name:String = str( f )
+		scripts.append( {
+			"file": file_name,
+			"path": folder.path_join( file_name ),
+		} )
+	return scripts
+
+func _gd_file_filter( filename:String ) -> bool:
+	return filename.ends_with( ".gd" )
+
+func _group_spec_matches( gd:Dictionary, spec:String ) -> bool:
+	var want:String = spec.to_lower()
+	var gn:String = str( gd.get( "group", "" ) ).to_lower()
+	if gn == want \
+	or gn.begins_with( want + "/" ):
+		return true
+	var folder:String = str( gd.get( "folder", "" ) )
+	return folder.get_file().to_lower() == want \
+	or folder.get_file().to_pascal_case().to_lower() == want
+
+func _group_for_path( script_path:String ) -> String:
+	var best:String = ""
+	var best_len:int = -1
+	for g:Variant in groups:
+		var gd:Dictionary = g
+		var folder:String = str( gd.get( "folder", "" ) )
+		if script_path.begins_with( folder + "/" ) \
+		or script_path.begins_with( folder + "\\" ):
+			if folder.length() > best_len:
+				best = str( gd.get( "group", "" ) )
+				best_len = folder.length()
+	if not best.is_empty():
+		return best
+	var parent:String = script_path.get_base_dir().get_file()
+	return parent.to_pascal_case()
 
 func _run_batch(
 			paths:PackedStringArray,
@@ -350,7 +494,6 @@ func _run_batch(
 		await _run_batch_sequential( paths, use_lvl, use_tracy, results, run_id )
 		_finish_batch( results, on_done )
 
-
 func _run_batch_sequential(
 			paths:PackedStringArray,
 			use_lvl:int,
@@ -373,7 +516,6 @@ func _run_batch_sequential(
 		batch_progress.emit( i, total, entry )
 		# Persist after each test so a crash mid-batch keeps partial progress.
 		_write_results_files( results, run_id )
-
 
 ## Parallel batch: same launch model as TestRunner UI process_selection.
 ## Why flag exists: sequential-only could not prove suite isolation under real
@@ -414,7 +556,6 @@ func _run_batch_parallel(
 				on_done
 		)
 
-
 func _run_one_parallel_slot(
 			path:String,
 			index:int,
@@ -444,7 +585,6 @@ func _run_one_parallel_slot(
 	if left[0] <= 0:
 		_finish_batch( results, on_done )
 
-
 func _finish_batch( results:Dictionary, on_done:Callable ) -> void:
 	last_results = results
 	last_log_path = str( results.get( "log_path", "" ) )
@@ -452,7 +592,6 @@ func _finish_batch( results:Dictionary, on_done:Callable ) -> void:
 	batch_finished.emit( results )
 	if on_done.is_valid():
 		on_done.call( results )
-
 
 func _run_one( script_path:String, use_lvl:int, use_tracy:bool = false ) -> Dictionary:
 	var group_name:String = _group_for_path( script_path )
@@ -535,7 +674,6 @@ func _run_one( script_path:String, use_lvl:int, use_tracy:bool = false ) -> Dict
 		instance.free()
 	return entry
 
-
 ## Editor host. [param use_tracy] is the command override, same as TestBase.
 func _run_case( script:GDScript, entry:Dictionary, use_tracy:bool ) -> Dictionary:
 	var session := CaseSession.new()
@@ -567,7 +705,6 @@ func _run_case( script:GDScript, entry:Dictionary, use_tracy:bool ) -> Dictionar
 	entry["output"] = _cap_output( lines )
 	return entry
 
-
 func _try_set( obj:Object, prop:String, value:Variant ) -> void:
 	if obj == null:
 		return
@@ -575,7 +712,6 @@ func _try_set( obj:Object, prop:String, value:Variant ) -> void:
 		if str( p.get( "name", "" ) ) == prop:
 			obj.set( prop, value )
 			return
-
 
 func _cap_output( lines:Array ) -> Array:
 	if lines.size() <= MAX_OUTPUT_LINES:
@@ -585,35 +721,6 @@ func _cap_output( lines:Array ) -> Array:
 	for i:int in range( start, lines.size() ):
 		capped.append( lines[i] )
 	return capped
-
-
-func _group_spec_matches( gd:Dictionary, spec:String ) -> bool:
-	var want:String = spec.to_lower()
-	var gn:String = str( gd.get( "group", "" ) ).to_lower()
-	if gn == want \
-	or gn.begins_with( want + "/" ):
-		return true
-	var folder:String = str( gd.get( "folder", "" ) )
-	return folder.get_file().to_lower() == want \
-	or folder.get_file().to_pascal_case().to_lower() == want
-
-
-func _group_for_path( script_path:String ) -> String:
-	var best:String = ""
-	var best_len:int = -1
-	for g:Variant in groups:
-		var gd:Dictionary = g
-		var folder:String = str( gd.get( "folder", "" ) )
-		if script_path.begins_with( folder + "/" ) \
-		or script_path.begins_with( folder + "\\" ):
-			if folder.length() > best_len:
-				best = str( gd.get( "group", "" ) )
-				best_len = folder.length()
-	if not best.is_empty():
-		return best
-	var parent:String = script_path.get_base_dir().get_file()
-	return parent.to_pascal_case()
-
 
 func _write_results_files( results:Dictionary, run_id:String ) -> void:
 	var abs_dir:String = ProjectSettings.globalize_path( RESULTS_DIR )
@@ -630,13 +737,11 @@ func _write_results_files( results:Dictionary, run_id:String ) -> void:
 	_write_text( LAST_JSON_PATH, json_text )
 	_write_text( text_path, _format_log( results ) )
 
-
 func _result_lvl( results:Dictionary ) -> int:
 	var got:Variant = results.get( "lvl", Log.Level.DEFAULT )
 	if got is int:
 		return got
 	return Log.Level.DEFAULT
-
 
 func _format_log( results:Dictionary ) -> String:
 	var lines:Array = []
@@ -667,7 +772,6 @@ func _format_log( results:Dictionary ) -> String:
 			lines.append( str( line ) )
 	return "\n".join( lines )
 
-
 func _write_text( path:String, text:String ) -> void:
 	var f:FileAccess = FileAccess.open( path, FileAccess.WRITE )
 	if f == null:
@@ -678,7 +782,6 @@ func _write_text( path:String, text:String ) -> void:
 		return
 	var _ok:bool = f.store_string( text )
 	f.close()
-
 
 func _load_last_json() -> Dictionary:
 	if not FileAccess.file_exists( LAST_JSON_PATH ):
@@ -691,137 +794,8 @@ func _load_last_json() -> Dictionary:
 		return parsed
 	return {}
 
-
-## Format list_tests for human TCP reply (non-JSON).
-func format_list_text() -> String:
-	var list:Array = list_tests()
-	if list.is_empty():
-		return "OK: no groups under %s or %s" % [test_path, _case_root()]
-	var lines:Array = []
-	lines.append( "OK: tests under %s, cases under %s" % [test_path, _case_root()] )
-	for g:Variant in list:
-		var gd:Dictionary = g
-		var scripts:Array = gd.get( "scripts", [] )
-		lines.append( "  [%s] %s (%d)" % [
-				str( gd.get( "group", "" ) ),
-				str( gd.get( "folder", "" ) ),
-				scripts.size(),
-		] )
-		for s:Variant in scripts:
-			var sd:Dictionary = s
-			lines.append( "    - %s" % str( sd.get( "file", "" ) ) )
-	return "\n".join( lines )
-
-
-## One line per suite + recap. Used by TCP/MCP and log files.
-func format_summary_table( results:Dictionary, bbcode:bool = true ) -> String:
-	var tests_v:Array = results.get( "tests", [] )
-	var passed:int = 0
-	passed = results.get( "passed", 0 )
-	var failed:int = 0
-	failed = results.get( "failed", 0 )
-	var lines:PackedStringArray = PackedStringArray()
-	var _n:int = lines.append( "[b]Summary[/b]" if bbcode else "Summary" )
-	for t:Variant in tests_v:
-		if not ( t is Dictionary ):
-			continue
-		var td:Dictionary = t
-		var status:String = str( td.get( "status", "" ) )
-		var group:String = str( td.get( "group", "" ) )
-		var path:String = str( td.get( "path", "" ) )
-		var file:String = path.get_file()
-		if file.is_empty():
-			file = path
-		if bbcode:
-			var color:String = "yellowgreen" if status == "OK" else "tomato"
-			_n = lines.append( "  [color=%s]%s[/color]  %s  [i]%s[/i]" % [
-					color, status, group, file ] )
-		else:
-			_n = lines.append( "  %s  %s  %s" % [status, group, file] )
-	var recap:String = "%d passed, %d failed" % [passed, failed]
-	_n = lines.append( "" )
-	if bbcode:
-		var recap_color:String = "yellowgreen" if failed == 0 else "tomato"
-		_n = lines.append( "[b][color=%s]%s[/color][/b]" % [recap_color, recap] )
-	else:
-		_n = lines.append( recap )
-	if failed > 0:
-		for t:Variant in tests_v:
-			if not ( t is Dictionary ):
-				continue
-			var td:Dictionary = t
-			if str( td.get( "status", "" ) ) == "OK":
-				continue
-			var path:String = str( td.get( "path", "" ) )
-			if bbcode:
-				_n = lines.append( "  [color=tomato]FAIL[/color]  %s" % path )
-			else:
-				_n = lines.append( "  FAIL  %s" % path )
-	return "\n".join( lines )
-
-
 ## Color the logger's WARNING label. The stored line stays plain.
 func _color_output_line( line:String ) -> String:
 	if line.begins_with( "WARNING:" ):
 		return "[color=gold]WARNING[/color]" + line.substr( 7 )
 	return line
-
-
-## Serialize results for TCP/MCP: OK line + BBCode body.
-## Multi-suite runs print a compact table first. Per-suite logs follow only
-## for failures, or for every suite when info is open / a single test.
-## Full JSON stays in [member last_log_path] — do not dump it here; `[` in
-## JSON arrays is not BBCode and [method @GlobalScope.print_rich] would eat it.
-func format_results_reply( results:Dictionary, heading:String = "TESTS_RUN complete" ) -> String:
-	if results.has( "error" ) and str( results.get( "error", "" ) ) != "":
-		var err:String = str( results["error"] )
-		var tests:Array = results.get( "tests" )
-		if tests.is_empty():
-			return "ERROR: %s" % err
-	# Always OK: prefix for parseable multi-line; body carries status in BBCode.
-	# Agent exit codes: godot-cmd treats OK: as success of the *command*, not tests.
-	var header:String = "OK: %s ran=%s passed=%s failed=%s log=%s" % [
-			heading,
-			str( results.get( "ran", 0 ) ),
-			str( results.get( "passed", 0 ) ),
-			str( results.get( "failed", 0 ) ),
-			str( results.get( "log_path", last_log_path ) ),
-	]
-	var lines:PackedStringArray = PackedStringArray()
-	var _n:int = lines.append( header )
-	var tests_v:Array = results.get( "tests", [] )
-	var use_lvl:int = _result_lvl( results )
-	var dump_all:bool = Log.allows( use_lvl, Log.Level.INFO ) \
-			or tests_v.size() <= 1
-	if tests_v.size() > 1:
-		_n = lines.append( "" )
-		_n = lines.append( format_summary_table( results, true ) )
-	var dumped:bool = false
-	for t:Variant in tests_v:
-		if not ( t is Dictionary ):
-			continue
-		var td:Dictionary = t
-		var status:String = str( td.get( "status", "" ) )
-		if not dump_all and status == "OK":
-			continue
-		dumped = true
-		var color:String = "yellowgreen" if status == "OK" else "tomato"
-		_n = lines.append( "" )
-		_n = lines.append( "[b]%s[/b]  [color=%s]%s[/color]  [i]%s[/i]" % [
-				str( td.get( "group", "" ) ),
-				color,
-				status,
-				str( td.get( "path", "" ) ),
-		] )
-		for o:Variant in td.get( "output", [] ):
-			_n = lines.append( "\t%s" % _color_output_line( str( o ) ) )
-	if dumped and tests_v.size() > 1:
-		var failed:int = 0
-		failed = results.get( "failed", 0 )
-		var passed:int = 0
-		passed = results.get( "passed", 0 )
-		var recap:String = "%d passed, %d failed" % [passed, failed]
-		var recap_color:String = "yellowgreen" if failed == 0 else "tomato"
-		_n = lines.append( "" )
-		_n = lines.append( "[b][color=%s]%s[/color][/b]" % [recap_color, recap] )
-	return "\n".join( lines )
