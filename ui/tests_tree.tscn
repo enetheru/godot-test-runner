@@ -1,0 +1,26 @@
+[gd_scene format=3 uid="uid://n3xvbjc1uep8"]
+
+[ext_resource type="Script" uid="uid://dvvnrjmjouxec" path="res://addons/enetheru.test-runner/ui/test_tree.gd" id="1_hyggh"]
+[ext_resource type="Theme" path="res://addons/enetheru.test-runner/res/main_panel_theme.tres" id="2_theme"]
+
+[node name="TestsTree" type="Tree" unique_id=440403718]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme = ExtResource("2_theme")
+theme_type_variation = &"TestTree"
+theme_override_constants/outline_size = 4
+theme_override_constants/draw_guides = 4
+theme_override_constants/draw_relationship_lines = 4
+theme_override_constants/relationship_line_width = 2
+theme_override_constants/parent_hl_line_width = 2
+theme_override_constants/children_hl_line_width = 2
+theme_override_constants/parent_hl_line_margin = 4
+columns = 7
+column_titles_visible = true
+select_mode = 2
+script = ExtResource("1_hyggh")

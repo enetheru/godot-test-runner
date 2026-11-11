@@ -5,9 +5,9 @@
 [ext_resource type="Texture2D" uid="uid://c5mjw61j4wra4" path="res://addons/enetheru.test-runner/res/folder-sync.svg" id="5_k3utk"]
 [ext_resource type="Texture2D" uid="uid://clvd7lgq1sdn3" path="res://addons/enetheru.test-runner/res/trash-can.svg" id="6_blb3b"]
 [ext_resource type="Texture2D" uid="uid://dngr7cckmvug" path="res://addons/enetheru.test-runner/res/circle-question.svg" id="7_5fedl"]
+[ext_resource type="PackedScene" uid="uid://n3xvbjc1uep8" path="res://addons/enetheru.test-runner/ui/tests_tree.tscn" id="8_l7jc5"]
 [ext_resource type="Theme" path="res://addons/enetheru.test-runner/res/main_panel_theme.tres" id="8_theme"]
 [ext_resource type="Texture2D" uid="uid://slb2bsjrbqwn" path="res://addons/enetheru.test-runner/res/menu-down.svg" id="9_down"]
-[ext_resource type="Script" uid="uid://dvvnrjmjouxec" path="res://addons/enetheru.test-runner/ui/test_tree.gd" id="9_tree"]
 
 [node name="TestRunner" type="VBoxContainer" unique_id=1145744051]
 anchors_preset = 15
@@ -137,22 +137,8 @@ tooltip_text = "Glob on the row name. * and ? are wildcards. Other text matches 
 placeholder_text = "*glob*"
 clear_button_enabled = true
 
-[node name="TestsTree" type="Tree" parent="TestOutput/TestList" unique_id=111155159]
+[node name="TestsTree" parent="TestOutput/TestList" unique_id=440403718 instance=ExtResource("8_l7jc5")]
 layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 3
-theme_type_variation = &"TestTree"
-theme_override_constants/outline_size = 4
-theme_override_constants/draw_guides = 4
-theme_override_constants/draw_relationship_lines = 4
-theme_override_constants/relationship_line_width = 2
-theme_override_constants/parent_hl_line_width = 2
-theme_override_constants/children_hl_line_width = 2
-theme_override_constants/parent_hl_line_margin = 4
-columns = 7
-column_titles_visible = true
-select_mode = 2
-script = ExtResource("9_tree")
 
 [node name="InfoList" type="VBoxContainer" parent="TestOutput" unique_id=1667280722]
 layout_mode = 2
