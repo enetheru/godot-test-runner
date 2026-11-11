@@ -4,8 +4,8 @@ extends Tree
 ## The test list. The panel rebuilds it and starts runs.
 ## Clicks come back as signals.
 
-const Shared = preload( "uid://ccrhkvl5ptefw" )
-const TestDef = Shared.TestDef
+const TestRows = preload( "uid://dk7mtestrows1" )
+const TestDef = TestRows.TestDef
 const Icons = preload( "../res/icons.tres" )
 
 const RUN_ICON_SIZE:Vector2i = Vector2i( 16, 16 )

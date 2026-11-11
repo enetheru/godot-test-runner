@@ -8,7 +8,8 @@ extends VBoxContainer
 
 # Scripts
 const InfoBox = preload( "uid://gli414sa5hot" )
-const Shared = preload( "uid://ccrhkvl5ptefw" )
+const TestScan = preload( "uid://dk7mscanwalk1" )
+const TestRows = preload( "uid://dk7mtestrows1" )
 const TR_Opts = preload( "uid://c3rwpcm55iy6r" )
 const Log = preload( "uid://br7jtx5cntuan" )
 const CaseMenu = preload( "uid://bmxtuig6f1i7d" )
@@ -16,9 +17,9 @@ const TestTree = preload( "uid://dvvnrjmjouxec" )
 const TracyCapture = preload( "uid://c38qii7m273x0" )
 
 # Classes
-const TestDef = Shared.TestDef
-const TestResult = Shared.TestResult
-const RetCode = Shared.RetCode
+const TestDef = TestRows.TestDef
+const TestResult = TestRows.TestResult
+const RetCode = TR_Base.RetCode
 
 # Scenes
 const INFO_BOX = preload( "uid://dt0eqt7nuorql" )
@@ -69,7 +70,7 @@ var _case_path:String = TR_Opts.DEFAULT_CASES_DIR
 var _test_script_filter:Callable = default_script_filter
 
 # Junction and symlink cycle guard. Not a UI depth limit.
-var _max_scan_depth:int = Shared.DEFAULT_MAX_SCAN_DEPTH
+var _max_scan_depth:int = TestScan.DEFAULT_MAX_SCAN_DEPTH
 
 # Inclusive log ceiling for the next run.
 var _test_lvl:int = Log.Level.DEFAULT
@@ -352,7 +353,7 @@ func default_script_filter( filename:String ) -> bool:
 
 
 func collect_tests( _path:String ) -> Array[TestDef]:
-	var tree:Array[Dictionary] = Shared.collect_test_tree(
+	var tree:Array[Dictionary] = TestScan.collect_test_tree(
 			_path, _max_scan_depth, _test_script_filter )
 	var tests:Array[TestDef] = []
 	for node:Dictionary in tree:
@@ -566,7 +567,7 @@ func process_test( file_item:TreeItem ) -> void:
 	if Log.allows( _test_lvl, Log.Level.INFO ) \
 	or result.retcode == RetCode.TEST_FAILED:
 		info_text = "Empty" if result.output.is_empty() \
-			else result.output.reduce(Shared.reducer_to_lines)
+			else result.output.reduce( TR_Base.reducer_to_lines )
 
 	_finish_editor( file_item, script_path, result, info_box, info_text )
 
@@ -724,7 +725,7 @@ func _cases_branch() -> TestDef:
 	branch.name = "Cases"
 	branch.folder_path = root
 	branch.test_scripts = TR_CaseSession.case_files( root )
-	var tree:Array[Dictionary] = Shared.collect_test_tree(
+	var tree:Array[Dictionary] = TestScan.collect_test_tree(
 			root, _max_scan_depth, _gd_file_filter )
 	for node:Dictionary in tree:
 		var child:TestDef = _prune_case_def( _test_def_from_node( node ) )

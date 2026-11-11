@@ -4,9 +4,8 @@ extends Node
 ## Runs one batch for the test runner service.
 ## Sequential by default. Parallel launches every script without awaiting the previous.
 
-const Shared = preload( "uid://ccrhkvl5ptefw" )
 const TR_Service = preload( "uid://dmaf85hvsuhon" )
-const RetCode = Shared.RetCode
+const RetCode = TR_Base.RetCode
 
 const MAX_OUTPUT_LINES:int = 200
 

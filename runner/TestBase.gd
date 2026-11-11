@@ -3,14 +3,17 @@ class_name TR_Base extends EditorScript
 
 const TR_Opts = preload( "uid://c3rwpcm55iy6r" )
 const TR_Gate = preload( "uid://c8rungatehold1" )
-const Shared = preload( "uid://ccrhkvl5ptefw" )
 const TracyHooks = preload( "uid://c38qii7m273x0" )
 const Log = preload( "uid://br7jtx5cntuan" )
-const TestResult = Shared.TestResult
 
-## NOTE: Dont forget, OK is 1, FAIL is 0.
-## Which is backwards for the standard case for reasons.
-const RetCode = Shared.RetCode
+## Failure is 0 because a crash returns the default int.
+enum RetCode {
+	## A crash, an assert, or a body that returned failure.
+	TEST_FAILED = 0,
+
+	## The body returned success.
+	TEST_OK = 1,
+}
 
 
 #██████  ███████ ███████ ██ ███    ██ ██ ████████ ██  ██████  ███    ██ ███████#
@@ -463,6 +466,13 @@ func _emit_rich( msg:Variant ) -> void:
 	Log.rich( Log.Level.INFO, msg, self )
 
 
+## Join output rows. An empty accumulator starts the text.
+static func reducer_to_lines( accum:String = "", value:Variant = null ) -> String:
+	if accum:
+		return accum + "\n" + str( value )
+	return str( value )
+
+
 ## [param args] is formatted only when the debug bit is open.
 func logd( msg:Variant = "", args:Array = [] ) -> void:
 	if not Log.allows( local_lvl, Log.Level.DEBUG ):
@@ -471,7 +481,7 @@ func logd( msg:Variant = "", args:Array = [] ) -> void:
 		msg = msg % args
 	elif msg is Array:
 		var array:Array = msg
-		msg = array.reduce( Shared.reducer_to_lines )
+		msg = array.reduce( reducer_to_lines )
 	Log.lvl( Log.Level.DEBUG, msg, self )
 
 
@@ -511,11 +521,18 @@ static func bytes_view( bytes:PackedByteArray, cols:int = 8 ) -> String:
 #                     ██    ███████ ███████    ██    ███████                   #
 func                        __________TESTS__________              ()->void:pass
 
+## Bbcode link to the stack frame at [param depth].
+static func _call_site( depth:int = 1 ) -> String:
+	var stack:Array = get_stack()
+	var frame:Dictionary = stack[mini( stack.size(), depth )]
+	return "[url='{source}:{line}']{source}:{line}:{function}()[/url]".format( frame )
+
+
 # test is abstracted so that exceptions trigger a fail.
 func _test_eq( want_v:Variant, got_v:Variant, desc:String = "" ) -> bool:
 	if want_v == got_v: return true
 	var msg:String = '\n'.join([
-		"[b][color=salmon]%s: '%s'[/color][/b]" % [Shared.get_call_site(3), desc],
+		"[b][color=salmon]%s: '%s'[/color][/b]" % [_call_site( 3 ), desc],
 		"\twanted: '%s' == got: '%s'" % [want_v, got_v ]])
 	# TODO add the call_site to the error message.
 	_note_fail( msg )
@@ -539,7 +556,7 @@ func TEST_EQ( want_v:Variant, got_v:Variant, desc:String = "") -> void:
 func _test_approx( want_v:float, got_v:float, desc:String = "" ) -> bool:
 	if is_equal_approx(want_v, got_v): return true
 	var msg:String = '\n'.join([
-		"[b][color=salmon]%s: '%s'[/color][/b]" % [Shared.get_call_site(3), desc],
+		"[b][color=salmon]%s: '%s'[/color][/b]" % [_call_site( 3 ), desc],
 		"\twanted: '%s' ~= got: '%s'" % [want_v, got_v ]])
 	_note_fail( msg )
 	return false
@@ -562,7 +579,7 @@ func TEST_APPROX( want_v:float, got_v:float, desc:String = "" ) -> void:
 func _test_true( value:Variant, desc:String = "" ) -> bool:
 	if value: return true
 	var msg:String = '\n'.join([
-		"[b][color=salmon]%s: '%s'[/color][/b]" % [Shared.get_call_site(3), desc],
+		"[b][color=salmon]%s: '%s'[/color][/b]" % [_call_site( 3 ), desc],
 		"\twanted: true | value != (0 & null)",
 		"\tgot: '%s'" % value])
 	_note_fail( msg )
@@ -586,7 +603,7 @@ func TEST_TRUE( value:Variant, desc:String = "" ) -> void:
 func _test_false( value:Variant, desc:String = "" ) -> bool:
 	if not value: return true
 	var msg:String = '\n'.join([
-		"[b][color=salmon]%s: '%s'[/color][/b]" % [Shared.get_call_site(3), desc],
+		"[b][color=salmon]%s: '%s'[/color][/b]" % [_call_site( 3 ), desc],
 		"\twanted: false | value == (0 & null)",
 		"\tgot: '%s'" % value])
 	_note_fail( msg )
@@ -619,7 +636,7 @@ func _test_op( val1:Variant, op:int, val2:Variant, desc:String = ""  ) -> bool:
 	if op_result: return true
 
 	var msg:String = '\n'.join([
-		"[b][color=salmon]%s: '%s'[/color][/b]" % [Shared.get_call_site(3), desc],
+		"[b][color=salmon]%s: '%s'[/color][/b]" % [_call_site( 3 ), desc],
 		"\tOp: ('%s' %s '%s') is false" % [val1, op_string[op], val2]])
 	_note_fail( msg )
 	return false

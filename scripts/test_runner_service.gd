@@ -9,7 +9,7 @@ extends Node
 ## Default batch is sequential; [code]opts.parallel[/code] matches the UI
 ## (launch every suite without awaiting the previous).
 
-const Shared = preload( "uid://ccrhkvl5ptefw" )
+const TestScan = preload( "uid://dk7mscanwalk1" )
 const Log = preload( "uid://br7jtx5cntuan" )
 const TR_Opts = preload( "uid://c3rwpcm55iy6r" )
 const _BATCH_UID := "uid://bsx0nrerfipri"
@@ -36,7 +36,7 @@ var test_path:String = DEFAULT_TEST_PATH
 var case_path:String = DEFAULT_CASE_PATH
 
 ## Junction and symlink cycle guard. Not a group-name depth limit.
-var max_scan_depth:int = Shared.DEFAULT_MAX_SCAN_DEPTH
+var max_scan_depth:int = TestScan.DEFAULT_MAX_SCAN_DEPTH
 
 ## Inclusive [constant Log.Level] copied onto each instance as [code]local_lvl[/code].
 var lvl:int = Log.Level.DEFAULT
@@ -123,8 +123,8 @@ func list_tests() -> Array:
 ## matches that node and every descendant.
 func collect_groups( path:String = "" ) -> Array:
 	var root:String = path if not path.is_empty() else test_path
-	var tree:Array[Dictionary] = Shared.collect_test_tree(
-			root, max_scan_depth, _script_filter, Callable(), _folder_filter )
+	var tree:Array[Dictionary] = TestScan.collect_test_tree(
+			root, max_scan_depth, _script_filter, _folder_filter )
 	return _groups_from_tree( tree, "" )
 
 
@@ -463,8 +463,8 @@ func _case_groups() -> Array:
 			"folder": root,
 			"scripts": _script_rows( root, root_files ),
 		} )
-	var tree:Array[Dictionary] = Shared.collect_test_tree(
-			root, max_scan_depth, _gd_file_filter, Callable(), _folder_filter )
+	var tree:Array[Dictionary] = TestScan.collect_test_tree(
+			root, max_scan_depth, _gd_file_filter, _folder_filter )
 	var nested:Array = _groups_from_tree( tree, "Cases" )
 	for g:Variant in nested:
 		if not ( g is Dictionary ):
