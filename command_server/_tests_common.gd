@@ -3,7 +3,7 @@ extends RefCounted
 
 ## Shared helpers for TESTS_* Command Server handlers.
 
-const Log = preload( "../logging.gd" )
+const Log = preload( "uid://br7jtx5cntuan" )
 
 
 static func find_test_runner_plugin() -> EditorPlugin:

@@ -9,11 +9,11 @@ extends EditorContextMenuPlugin
 ## code-editor slot stays empty. Scripts and folders under the configured
 ## cases folder are the cases. A folder runs every case script inside it.
 
-const CaseSessionScript = preload( "CaseSession.gd" )
-const PlayPack = preload( "play_pack.gd" )
+const CaseSessionScript = preload( "uid://blrcpfnrs606p" )
+const PlayPack = preload( "uid://bmt02dy5hnmht" )
 
-const PLAYER_SCENE := "res://addons/enetheru.test-runner/case/player.tscn"
-const SCRIPT_HOST := "res://addons/enetheru.test-runner/case/script_host.gd"
+const PLAYER_SCENE := "res://addons/enetheru.test-runner/runner/player.tscn"
+const SCRIPT_HOST := "res://addons/enetheru.test-runner/runner/script_host.gd"
 
 
 # ██████  ██████   ██████  ██████  ███████ ██████  ████████ ██ ███████ ███████ #

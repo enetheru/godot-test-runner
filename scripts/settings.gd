@@ -50,7 +50,7 @@
 ##[br][color=goldenrod]TODO[/color]: have a URL we can point to and verify we
 ## have the latest version.
 
-const Log = preload( "../logging.gd" )
+const Log = preload( "uid://br7jtx5cntuan" )
 
 ## [enum PropertyHint] value to its global constant name.
 ## This build keeps global enums off ClassDB.

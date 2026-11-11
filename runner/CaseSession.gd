@@ -19,9 +19,9 @@ extends RefCounted
 ## installs for this run, and [code]-1[/code] honors
 ## [code]plugin/test_runner/Tracy/tracy[/code].
 
-const TreeClockScript = preload( "tree_clock.gd" )
-const LoopClockScript = preload( "loop_clock.gd" )
-const TracyHooks = preload( "../runner/TracyCapture.gd" )
+const TreeClockScript = preload( "uid://d1tkhkfbyirfq" )
+const LoopClockScript = preload( "uid://jiyhdb8bmsbq" )
+const TracyHooks = preload( "uid://c38qii7m273x0" )
 
 const TEST_FAILED := 0
 const TEST_OK := 1

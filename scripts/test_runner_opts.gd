@@ -11,7 +11,7 @@ const PREFIX:String = "plugin/test_runner"
 const DEFAULT_TESTS_DIR:String = "res://tests"
 const DEFAULT_CASES_DIR:String = "res://cases"
 const _OPTS_PATH:String = "res://addons/enetheru.test-runner/res/opts.tres"
-const Log = preload( "../logging.gd" )
+const Log = preload( "uid://br7jtx5cntuan" )
 
 static var _shared:TestRunnerOpts
 

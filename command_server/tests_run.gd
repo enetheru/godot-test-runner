@@ -6,9 +6,9 @@ extends CommandServerTool
 # no await between suites). Do NOT await here — bare RefCounted coroutines are
 # unreliable. Service is a Node and completes via begin_run → on_done.
 
-const Common = preload( "_tests_common.gd" )
-const Log = preload( "../logging.gd" )
-const TracyHooks = preload( "../runner/TracyCapture.gd" )
+const Common = preload( "uid://byjo8kv2agqny" )
+const Log = preload( "uid://br7jtx5cntuan" )
+const TracyHooks = preload( "uid://c38qii7m273x0" )
 const _ConfirmScene = preload( "../../enetheru.command-server/ui/confirm.tscn" )
 const _ConfirmScript = preload( "../../enetheru.command-server/ui/confirm.gd" )
 

@@ -1,19 +1,19 @@
 @tool
 extends EditorPlugin
 
-const MainPanel = preload( "ui/main_panel.tscn" )
+const MainPanel = preload( "uid://cp6632s1ekh6i" )
 
-const ServiceScript = preload( "scripts/test_runner_service.gd" )
-const CaseMenu = preload( "case/menu.gd" )
+const ServiceScript = preload( "uid://dmaf85hvsuhon" )
+const CaseMenu = preload( "uid://bmxtuig6f1i7d" )
 
 ## Plugin Settings
-const SettingsScript = preload( "scripts/settings.gd" )
-const OptsScript = preload( "scripts/test_runner_opts.gd" )
-const OptsInspector = preload( "scripts/opts_inspector.gd" )
+const SettingsScript = preload( "uid://7tb57rb6jgsd" )
+const OptsScript = preload( "uid://c3rwpcm55iy6r" )
+const OptsInspector = preload( "uid://dq1b7yvbgshko" )
 const SETTINGS_PREFIX:String = OptsScript.PREFIX
 
 ## ExportPlugin
-const _ExportPlugin = preload( "export_plugin.gd" )
+const _ExportPlugin = preload( "uid://b8k2h8yctcagr" )
 
 ## Command Server name
 const CS_OWNER:String = "enetheru.test-runner"

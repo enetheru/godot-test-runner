@@ -5,7 +5,7 @@ extends MainLoop
 ## This process has a loop and no scene tree. A case marked `NEEDS_TREE`
 ## is refused before its body starts.
 
-const CaseSessionScript = preload( "CaseSession.gd" )
+const CaseSessionScript = preload( "uid://blrcpfnrs606p" )
 
 
 # ██████  ██████   ██████  ██████  ███████ ██████  ████████ ██ ███████ ███████ #

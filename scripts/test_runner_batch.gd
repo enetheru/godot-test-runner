@@ -4,7 +4,7 @@ extends Node
 ## Runs one batch for [TestRunnerService].
 ## Sequential by default. Parallel launches every script without awaiting the previous.
 
-const Shared = preload( "shared.gd" )
+const Shared = preload( "uid://ccrhkvl5ptefw" )
 const RetCode = Shared.RetCode
 
 const MAX_OUTPUT_LINES:int = 200

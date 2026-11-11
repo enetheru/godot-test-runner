@@ -5,7 +5,7 @@ extends EditorInspectorPlugin
 ##
 ## Level lists every ceiling. Tracy and its pad stay disabled until capture is configured.
 
-const OptsScript = preload( "test_runner_opts.gd" )
+const OptsScript = preload( "uid://c3rwpcm55iy6r" )
 
 
 ##[codeblock lang=text]
@@ -16,7 +16,7 @@ const OptsScript = preload( "test_runner_opts.gd" )
 ##╰─────────────────────────────────────────────
 ##[/codeblock]Full ceiling list. The exported enum only has Notice and above.
 class LevelEditor extends EditorProperty:
-	const _Log = preload( "../logging.gd" )
+	const _Log = preload( "uid://br7jtx5cntuan" )
 
 	var _option:OptionButton
 
@@ -61,7 +61,7 @@ class LevelEditor extends EditorProperty:
 ##
 ## Same gate as the dock. No Profiler hides the switch. A missing capture setup disables it.
 class TracyEditor extends EditorProperty:
-	const _Capture = preload( "../runner/TracyCapture.gd" )
+	const _Capture = preload( "uid://c38qii7m273x0" )
 
 	var _check:CheckButton
 	var _listening:bool = false
@@ -129,7 +129,7 @@ class TracyEditor extends EditorProperty:
 ##
 ## Locked by the same capture gate as the Tracy switch.
 class PadEditor extends EditorProperty:
-	const _Capture = preload( "../runner/TracyCapture.gd" )
+	const _Capture = preload( "uid://c38qii7m273x0" )
 
 
 	var _slider:EditorSpinSlider

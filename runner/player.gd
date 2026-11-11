@@ -5,7 +5,7 @@ extends Node
 ## The tree is the game tree. Hint follows the executable, so an editor
 ## binary playing this scene reports hint false.
 
-const CaseSessionScript = preload( "CaseSession.gd" )
+const CaseSessionScript = preload( "uid://blrcpfnrs606p" )
 
 
 #      ██████  ██    ██ ███████ ██████  ██████  ██ ██████  ███████ ███████     #

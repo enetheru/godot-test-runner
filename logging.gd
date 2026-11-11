@@ -69,7 +69,7 @@ static var Names:Dictionary = {
 
 ## Bound backend. Created by [method set_backend].
 class Bound extends RefCounted:
-	const Shim = preload( "logging.gd" )
+	const Shim = preload( "uid://br7jtx5cntuan" )
 
 	## Local mute when [member source] has no [code]disabled[/code].
 	var _disabled:bool = false

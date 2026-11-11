@@ -7,12 +7,12 @@ extends VBoxContainer
 
 
 # Scripts
-const InfoBox = preload('info_box.gd')
-const Shared = preload('../scripts/shared.gd')
-const OptsScript = preload( "../scripts/test_runner_opts.gd" )
-const Log = preload('../logging.gd')
-const CaseMenu = preload('../case/menu.gd')
-const TestTree = preload( "test_tree.gd" )
+const InfoBox = preload( "uid://gli414sa5hot" )
+const Shared = preload( "uid://ccrhkvl5ptefw" )
+const OptsScript = preload( "uid://c3rwpcm55iy6r" )
+const Log = preload( "uid://br7jtx5cntuan" )
+const CaseMenu = preload( "uid://bmxtuig6f1i7d" )
+const TestTree = preload( "uid://dvvnrjmjouxec" )
 
 # Classes
 const TestDef = Shared.TestDef
@@ -20,7 +20,7 @@ const TestResult = Shared.TestResult
 const RetCode = Shared.RetCode
 
 # Scenes
-const INFO_BOX = preload('info_box.tscn')
+const INFO_BOX = preload( "uid://dt0eqt7nuorql" )
 const HELP_PATH:String = "res://addons/enetheru.test-runner/ui/help.md"
 
 # ██████  ██████   ██████  ██████  ███████ ██████  ████████ ██ ███████ ███████ #

@@ -4,7 +4,7 @@ extends Tree
 ## The test list. The panel rebuilds it and starts runs.
 ## Clicks come back as signals.
 
-const Shared = preload( "../scripts/shared.gd" )
+const Shared = preload( "uid://ccrhkvl5ptefw" )
 const TestDef = Shared.TestDef
 const Icons = preload( "../res/icons.tres" )
 

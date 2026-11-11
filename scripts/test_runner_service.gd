@@ -10,9 +10,9 @@ extends Node
 ## Default batch is sequential; [code]opts.parallel[/code] matches the UI
 ## (launch every suite without awaiting the previous).
 
-const Shared = preload( "shared.gd" )
-const Log = preload( "../logging.gd" )
-const BatchScript = preload( "test_runner_batch.gd" )
+const Shared = preload( "uid://ccrhkvl5ptefw" )
+const Log = preload( "uid://br7jtx5cntuan" )
+const BatchScript = preload( "uid://bsx0nrerfipri" )
 
 const LAST_JSON_PATH:String = "user://test_runner_last.json"
 const RESULTS_DIR:String = "user://test_runner_results"

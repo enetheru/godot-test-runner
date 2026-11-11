@@ -1,7 +1,7 @@
 @tool
 extends EditorScript
 
-const InfoBox = preload('../ui/info_box.gd')
+const InfoBox = preload( "uid://gli414sa5hot" )
 
 
 ## NOTE: When a function bails due to assert, or crash, it returns the default

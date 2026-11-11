@@ -2,10 +2,10 @@
 class_name TestBase extends EditorScript
 var cycleref: EditorScript
 
-const OptsScript = preload( "../scripts/test_runner_opts.gd" )
-const Shared = preload('../scripts/shared.gd')
-const TracyHooks = preload('TracyCapture.gd')
-const Log = preload('../logging.gd')
+const OptsScript = preload( "uid://c3rwpcm55iy6r" )
+const Shared = preload( "uid://ccrhkvl5ptefw" )
+const TracyHooks = preload( "uid://c38qii7m273x0" )
+const Log = preload( "uid://br7jtx5cntuan" )
 const TestResult = Shared.TestResult
 
 ## NOTE: Dont forget, OK is 1, FAIL is 0.

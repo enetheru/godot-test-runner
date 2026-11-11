@@ -1,8 +1,8 @@
 @tool
 extends CommandServerTool
 
-const Common = preload( "_tests_common.gd" )
-const Log = preload( "../logging.gd" )
+const Common = preload( "uid://byjo8kv2agqny" )
+const Log = preload( "uid://br7jtx5cntuan" )
 
 
 func get_command_name() -> String:
