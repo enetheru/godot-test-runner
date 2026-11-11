@@ -1,21 +1,8 @@
 @tool
 extends EditorScript
 
-#           ████ ███    ███ ██████   ██████  ██████  ████████ ███████          #
-#            ██  ████  ████ ██   ██ ██    ██ ██   ██    ██    ██               #
-#            ██  ██ ████ ██ ██████  ██    ██ ██████     ██    ███████          #
-#            ██  ██  ██  ██ ██      ██    ██ ██   ██    ██         ██          #
-#           ████ ██      ██ ██       ██████  ██   ██    ██    ███████          #
-func                        _________IMPORTS_________              ()->void:pass
-
 const InfoBox = preload('../ui/info_box.gd')
 
-#                       ██████  ███████ ███████ ███████                        #
-#                       ██   ██ ██      ██      ██                             #
-#                       ██   ██ █████   █████   ███████                        #
-#                       ██   ██ ██      ██           ██                        #
-#                       ██████  ███████ ██      ███████                        #
-func                        __________DEFS___________              ()->void:pass
 
 ## NOTE: When a function bails due to assert, or crash, it returns the default
 ##  value in the case of an integer that is 0, which unfortunately equates to OK
@@ -28,6 +15,7 @@ enum RetCode {
 	## TEST_OK = 1
 	TEST_OK = 1
 }
+
 
 class TestDef extends RefCounted:
 	var name : String
@@ -103,26 +91,6 @@ static func collect_test_tree(
 				dir_filter )
 		if not node.is_empty():
 			out.append( node )
-	return out
-
-
-## Flat list of folders that contain scripts (nested children inlined).
-static func collect_tests( test_path:String ) -> Array[Dictionary]:
-	return flatten_test_tree( collect_test_tree( test_path ) )
-
-
-static func flatten_test_tree( tree:Array ) -> Array[Dictionary]:
-	var out:Array[Dictionary] = []
-	for node_v:Variant in tree:
-		if not node_v is Dictionary:
-			continue
-		var node:Dictionary = node_v
-		var scripts:Array = node.get( "test_scripts", [] )
-		if not scripts.is_empty():
-			out.append( node )
-		var kids:Array = node.get( "children", [] )
-		if not kids.is_empty():
-			out.append_array( flatten_test_tree( kids ) )
 	return out
 
 
