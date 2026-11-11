@@ -1,7 +1,7 @@
 [gd_scene format=3 uid="uid://dt0eqt7nuorql"]
 
 [ext_resource type="Script" uid="uid://gli414sa5hot" path="res://addons/enetheru.test-runner/ui/info_box.gd" id="1_hcdtn"]
-[ext_resource type="Theme" path="res://addons/enetheru.test-runner/ui/info_box_theme.tres" id="2_theme"]
+[ext_resource type="Theme" path="res://addons/enetheru.test-runner/res/info_box_theme.tres" id="2_theme"]
 
 [node name="TestInfo" type="PanelContainer" unique_id=1247760291]
 anchors_preset = 15
