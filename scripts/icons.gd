@@ -5,6 +5,8 @@ extends Resource
 ## [member tex] is filled by res/icons.tres.
 ## Callers preload that resource. There is no class name.
 
+# TODO add a custom inspector
+
 @export
 var tex:Dictionary[StringName, Texture2D] = {}
 

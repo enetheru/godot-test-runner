@@ -5,6 +5,15 @@
 [ext_resource type="Texture2D" uid="uid://dvy1xigrytulx" path="res://addons/enetheru.test-runner/res/debug-rerun.svg" id="3_rerun"]
 [ext_resource type="Texture2D" uid="uid://cvot4lpp8maag" path="res://addons/enetheru.test-runner/res/file-code.svg" id="4_code"]
 [ext_resource type="Texture2D" uid="uid://cepxbj0ne0kkt" path="res://addons/enetheru.test-runner/res/folder-open.svg" id="5_open"]
+[ext_resource type="Texture2D" uid="uid://ok4xuyp8e5vc" path="res://addons/enetheru.test-runner/res/script-text-play.svg" id="6_script"]
+[ext_resource type="Texture2D" uid="uid://dludh5tsdjww6" path="res://addons/enetheru.test-runner/res/play-box-edit-outline.svg" id="7_play"]
+[ext_resource type="Texture2D" uid="uid://bkauytnau7yoi" path="res://addons/enetheru.test-runner/res/bug-play.svg" id="8_bug"]
+[ext_resource type="Texture2D" uid="uid://dw736b5wbmjp2" path="res://addons/enetheru.test-runner/res/movie-play.svg" id="9_movie"]
+[ext_resource type="Texture2D" uid="uid://c2ysx0oja5l0" path="res://addons/enetheru.test-runner/res/cog-play.svg" id="10_cog"]
+[ext_resource type="Texture2D" uid="uid://bt4he4viuist3" path="res://addons/enetheru.test-runner/res/check.svg" id="11_ok"]
+[ext_resource type="Texture2D" uid="uid://dnikmf5cigmx6" path="res://addons/enetheru.test-runner/res/close.svg" id="12_cross"]
+[ext_resource type="Texture2D" uid="uid://bfo216mdolcys" path="res://addons/enetheru.test-runner/res/minus.svg" id="13_minus"]
+[ext_resource type="Texture2D" uid="uid://5p4ooo08nes1" path="res://addons/enetheru.test-runner/res/triangle-down.svg" id="14_down"]
 
 [resource]
 script = ExtResource("1_icons")
@@ -12,5 +21,14 @@ tex = Dictionary[StringName, Texture2D]({
 &"CHECKLIST": ExtResource("2_check"),
 &"DEBUG_RERUN": ExtResource("3_rerun"),
 &"FILE_CODE": ExtResource("4_code"),
-&"FOLDER_OPEN": ExtResource("5_open")
+&"FOLDER_OPEN": ExtResource("5_open"),
+&"SCRIPT_TEXT_PLAY": ExtResource("6_script"),
+&"PLAY_BOX_EDIT_OUTLINE": ExtResource("7_play"),
+&"BUG_PLAY": ExtResource("8_bug"),
+&"MOVIE_PLAY": ExtResource("9_movie"),
+&"COG_PLAY": ExtResource("10_cog"),
+&"CHECK": ExtResource("11_ok"),
+&"CLOSE": ExtResource("12_cross"),
+&"MINUS": ExtResource("13_minus"),
+&"TRIANGLE_DOWN": ExtResource("14_down")
 })
