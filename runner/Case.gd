@@ -17,7 +17,8 @@ extends RefCounted
 ##[br][br]
 ## A case that needs a different host declares that as a constant the
 ## session can read: NEEDS_TREE, EDITOR_ONLY, NEEDS_MAIN_SCENE, NATIVE,
-## BUDGET_S. Absent means no, empty, or five seconds.
+## BUDGET_S. Absent means no, empty, or five seconds. [code]DESCRIPTION[/code]
+## is the text the result card header opens.
 ##[br][br]
 ## [method _configure] assigns [member TR_CaseSession.budget_s] and
 ## [member TR_CaseSession.hooks]. It does not await. A tree host may then

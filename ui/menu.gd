@@ -181,7 +181,7 @@ func run_script( scr: Script ) -> void:
 
 
 ## Play targets and Headless. The panel walks EditorScript itself.
-## The report file receives one `case ` line per script.
+## The report file receives each case, including the lines under it.
 func launch( id: int, paths: PackedStringArray ) -> void:
 	CaseSessionScript.clear_report()
 	OS.set_environment( CaseSessionScript.REPORT_ENV, CaseSessionScript.report_file() )

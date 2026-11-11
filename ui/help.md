@@ -8,7 +8,7 @@ The button reads Play while the list is idle. It starts every run checked in the
 
 EditorScript runs those rows in this editor, one script at a time, and writes each result into the list. Test scripts and case scripts both run this way. During that walk the button reads Cancel. The script already running finishes, and Cancel drops the later scripts. Once pressed, the button reads Cancelling and stays inactive until the walk ends, then it reads Play again.
 
-Play Editor, Play template_debug, Play template_release, and Headless launch the case scripts. Several checked runs all start. Outside the editor, the same button starts the editor walk directly.
+Play Editor, Play template_debug, and Play template_release each start one case and wait until that game quits before the next case. Headless runs its cases in one process, one after another. Each of those runs adds a card on the right. The card names the run and the script. A script may declare `DESCRIPTION`. The card header opens to show that text. Checked runs start one after another. Outside the editor, the same button starts the editor walk directly.
 
 ## Reload Tests
 
@@ -24,7 +24,7 @@ The right side of the bar reads the counts in words: folders, results, failures,
 
 ## Level
 
-Each run adds its own card, and earlier cards stay in the list. The status word is the card title, colored from the result theme, with the script name beside it. The log sits in that card, under the title, and it renders the failure markup. ERROR and WARNING labels in that log take their colors from the result theme. A failure line is a link to that script. A failure's log is included. A pass includes its log when the level includes Info. The Status column reads the real state of the row. Each run kind is an icon in the column title. A green check or a red cross is that kind's result, and clicking the cell starts that run. A kind the row cannot run shows a minus, and its tooltip says that run is not available for this test.
+Each run adds its own card, and earlier cards stay in the list. The status word is the card title, colored from the result theme, with the script name beside it. The log sits in that card, under the title, and it renders the failure markup. ERROR and WARNING labels in that log take their colors from the result theme. A failure line is a link to that script. A failure's log is the reason that case failed. A pass includes its log when the level includes Info. The Status column reads the real state of the row. Each run kind is an icon in the column title. A green check or a red cross is that kind's result, and clicking the cell starts that run. A kind the row cannot run shows a minus, and its tooltip says that run is not available for this test.
 
 ## Clear Results
 

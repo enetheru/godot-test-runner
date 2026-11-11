@@ -4,8 +4,20 @@ extends PanelContainer
 # Card title. [method set_title] stores it and [method set_content] prints it.
 var _title:String
 
+# Status word from the latest [method set_content].
+var _status:String = ""
+
+# Test DESCRIPTION. Empty means the header does not expand.
+var _description_body:String = ""
+
+# True while the description is open under the header.
+var _description_open:bool = false
+
 # Status line. Assigned when the card is ready.
 @onready var _label:RichTextLabel = $Elements/Label
+
+# Description under the header. Hidden until the header is opened.
+@onready var _description:RichTextLabel = $Elements/Description
 
 # Log well under the status line.
 @onready var _rtl:RichTextLabel = $Elements/Log/RichTextLabel
@@ -15,22 +27,63 @@ func _ready() -> void:
 	if not _rtl.meta_clicked.is_connected( _on_log_meta ):
 		@warning_ignore( "return_value_discarded" )
 		_rtl.meta_clicked.connect( _on_log_meta )
+	if not _label.gui_input.is_connected( _on_header_input ):
+		@warning_ignore( "return_value_discarded" )
+		_label.gui_input.connect( _on_header_input )
 
 
 func set_title( new_title:String ) -> void:
 	_title = new_title
-	_label.clear()
-	_label.add_text( new_title )
+	_paint_header()
 
 
 ## Status word on the card, log in the well under it.
 func set_content( status:String, text:String ) -> void:
-	_label.clear()
-	_label.push_color( _status_color( status ) )
-	_label.add_text( status )
-	_label.pop()
-	_label.add_text( "  %s" % _title )
+	_status = status
+	set_meta( &"run_status", status )
+	_paint_header()
 	_write_log( text )
+
+
+## Store [param text] and keep it closed. The header opens it.
+func set_description( text:String ) -> void:
+	_description_body = text.strip_edges()
+	_description_open = false
+	_description.visible = false
+	_description.clear()
+	if _description_body != "":
+		_description.append_text( _description_body )
+	_paint_header()
+
+
+func _paint_header() -> void:
+	_label.clear()
+	if _description_body != "":
+		_label.add_text( "▾ " if _description_open else "▸ " )
+	if _status != "":
+		_label.push_color( _status_color( _status ) )
+		_label.add_text( _status )
+		_label.pop()
+		_label.add_text( "  " )
+	_label.add_text( _title )
+	if _description_body == "":
+		_label.mouse_default_cursor_shape = Control.CURSOR_ARROW
+	else:
+		_label.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+
+
+func _on_header_input( event:InputEvent ) -> void:
+	if _description_body == "":
+		return
+	if not event is InputEventMouseButton:
+		return
+	var click:InputEventMouseButton = event
+	if not click.pressed or click.button_index != MOUSE_BUTTON_LEFT:
+		return
+	_description_open = not _description_open
+	_description.visible = _description_open
+	_paint_header()
+	accept_event()
 
 
 func _write_log( text:String ) -> void:

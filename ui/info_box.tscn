@@ -28,6 +28,15 @@ fit_content = true
 scroll_active = false
 autowrap_mode = 0
 
+[node name="Description" type="RichTextLabel" parent="Elements" unique_id=2108841205]
+visible = false
+theme_type_variation = &"ResultLogText"
+layout_mode = 2
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
+autowrap_mode = 3
+
 [node name="Log" type="PanelContainer" parent="Elements" unique_id=1904412201]
 theme_type_variation = &"ResultLog"
 layout_mode = 2

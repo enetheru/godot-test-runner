@@ -377,14 +377,18 @@ func update_stats() -> void:
 	while not stack.is_empty():
 		var test_def:TestDef = stack.pop_back()
 		groups += 1
-		for result:TestResult in test_def.results.values():
-			results += 1
-			if result.retcode == RetCode.TEST_OK: successes += 1
-			if result.retcode == RetCode.TEST_FAILED: failures += 1
 		for child_v:Variant in test_def.children:
 			if child_v is TestDef:
 				var child_def:TestDef = child_v
 				stack.append( child_def )
+	if _info_items:
+		for child:Node in _info_items.get_children():
+			results += 1
+			var word:String = str( child.get_meta( &"run_status", "" ) )
+			if word == "OK":
+				successes += 1
+			elif word == "FAILED":
+				failures += 1
 
 	var plain := _stats_counter.get_theme_color( &"plain" )
 	var bad := _stats_counter.get_theme_color( &"failure" )
@@ -539,6 +543,7 @@ func process_test( file_item:TreeItem ) -> void:
 	var test_def:TestDef = file_item.get_metadata(0)
 	var script_file:String = file_item.get_text(0)
 	var script_path:String = "/".join([test_def.folder_path, script_file])
+	info_box.set_description( _script_description( script_path ) )
 	var info_text := ""
 
 	# We're only keeping around one rest result per test.
@@ -602,9 +607,18 @@ func run_case( script:GDScript, result:TestResult ) -> void:
 		return
 	await session.run_await( body )
 	result.retcode = session.runcode as RetCode
-	result.output = []
+	var rows:PackedStringArray = PackedStringArray()
 	for row:String in session.line().split( "\n" ):
-		result.output.append( row )
+		if row == "":
+			continue
+		if rows.append( row ):
+			push_error( "main_panel.run_case: append failed" )
+	result.output = []
+	if session.runcode == TR_CaseSession.TEST_OK:
+		for row:String in rows:
+			result.output.append( row )
+	else:
+		result.output.append( _failure_reason( rows ) )
 
 
 ## Clear InfoBoxes and tree status. The rows, the filter, and which folders are open stay.
@@ -613,10 +627,11 @@ func clear_results_ui() -> void:
 		_service.call( &"clear_results" )
 	_clear_stored_results( _test_list )
 	_tests_tree.clear_marks()
-	update_stats()
 	if _info_items:
 		for child in _info_items.get_children():
-			child.call_deferred( "queue_free" )
+			_info_items.remove_child( child )
+			child.queue_free()
+	update_stats()
 
 
 func regenerate_tree() -> void:
@@ -801,20 +816,43 @@ func _launch_kind( kind_id:int, files:Array[TreeItem] ) -> bool:
 	var paths:PackedStringArray = _tests_tree.paths_for_kind( kind_id, files )
 	if paths.is_empty():
 		return false
-	for file_item:TreeItem in files:
-		if is_instance_valid( file_item ) and _tests_tree.kind_allows( kind_id, file_item ):
-			_tests_tree.remember( _tests_tree.row_path( file_item ), kind_id, TestTree.Mark.RUN )
-			_tests_tree.paint_kind( file_item, kind_id )
-			_tests_tree.set_status( file_item, TestTree.Status.INPROGRESS )
 	_walks += 1
 	_apply_run_button()
 	if _run_menu == null:
 		_run_menu = CaseMenu.new()
-	_run_menu.launch( kind_id, paths )
-	if kind_id == TR_CaseSession.Launch.PLAY_EDITOR:
-		await _wait_for_play()
-	_apply_report( kind_id, paths )
-	var stopped := _halt_walk
+	var play_each:bool = kind_id == TR_CaseSession.Launch.PLAY_EDITOR \
+			or kind_id == TR_CaseSession.Launch.PLAY_DEBUG \
+			or kind_id == TR_CaseSession.Launch.PLAY_RELEASE
+	var stopped:bool = false
+	if play_each:
+		# One game at a time. The next case waits until this game has quit.
+		for path:String in paths:
+			if _halt_walk or CaseMenu.halt_set:
+				stopped = true
+				break
+			var one:PackedStringArray = PackedStringArray()
+			if one.append( path ):
+				push_error( "main_panel._launch_kind: append failed" )
+				break
+			for file_item:TreeItem in files:
+				if not is_instance_valid( file_item ):
+					continue
+				if _tests_tree.row_path( file_item ) != path:
+					continue
+				_tests_tree.remember( path, kind_id, TestTree.Mark.RUN )
+				_tests_tree.paint_kind( file_item, kind_id )
+			_run_menu.launch( kind_id, one )
+			if kind_id == TR_CaseSession.Launch.PLAY_EDITOR:
+				await _wait_for_play()
+			await _apply_report( kind_id, one )
+	else:
+		for file_item:TreeItem in files:
+			if is_instance_valid( file_item ) and _tests_tree.kind_allows( kind_id, file_item ):
+				_tests_tree.remember( _tests_tree.row_path( file_item ), kind_id, TestTree.Mark.RUN )
+				_tests_tree.paint_kind( file_item, kind_id )
+		_run_menu.launch( kind_id, paths )
+		await _apply_report( kind_id, paths )
+		stopped = _halt_walk
 	_walks = maxi( _walks - 1, 0 )
 	if _walks == 0:
 		_halt_walk = false
@@ -838,28 +876,156 @@ func _wait_for_play() -> void:
 func _apply_report( kind_id:int, paths:PackedStringArray ) -> void:
 	var seen:Dictionary = {}
 	var text:String = FileAccess.get_file_as_string( TR_CaseSession.report_file() )
+	var current_path:String = ""
+	var current_status:String = ""
+	var current_lines:PackedStringArray = PackedStringArray()
 	for raw:String in text.split( "\n" ):
-		var line := raw.strip_edges()
-		if not line.begins_with( "case " ):
+		var line:String = raw.strip_edges()
+		if line.begins_with( "case status=" ):
+			if current_path != "":
+				await _card_for_case( kind_id, current_path, current_status, current_lines )
+				seen[current_path] = true
+			current_status = ""
+			current_path = ""
+			current_lines = PackedStringArray()
+			# status can be two words. path is the rest of the line, spaces included.
+			var status_at:int = line.find( "status=" )
+			var runcode_at:int = line.find( " runcode=" )
+			if status_at >= 0 and runcode_at > status_at:
+				current_status = line.substr( status_at + 7, runcode_at - status_at - 7 )
+			var path_at:int = line.find( " path=" )
+			if path_at >= 0:
+				current_path = line.substr( path_at + 6 )
+			if current_lines.append( line ):
+				push_error( "main_panel._apply_report: append failed" )
 			continue
-		var path := ""
-		var status := ""
-		for part:String in line.split( " " ):
-			if part.begins_with( "path=" ):
-				path = part.trim_prefix( "path=" )
-			elif part.begins_with( "status=" ):
-				status = part.trim_prefix( "status=" )
-		if path == "":
+		if current_path == "" or line == "":
 			continue
-		var mark:TestTree.Mark = TestTree.Mark.OK if status == "pass" else TestTree.Mark.FAIL
-		seen[path] = true
-		_tests_tree.remember( path, kind_id, mark )
-		_tests_tree.repaint_path( path )
+		if current_lines.append( line ):
+			push_error( "main_panel._apply_report: append failed" )
+	if current_path != "":
+		await _card_for_case( kind_id, current_path, current_status, current_lines )
+		seen[current_path] = true
 	for path:String in paths:
 		if seen.has( path ):
 			continue
-		_tests_tree.remember( path, kind_id, TestTree.Mark.FAIL )
-		_tests_tree.repaint_path( path )
+		var missing:PackedStringArray = PackedStringArray()
+		if missing.append( "No case line." ):
+			push_error( "main_panel._apply_report: append failed" )
+		await _card_for_case( kind_id, path, "fail", missing )
+	update_stats()
+
+
+## One card for a play or headless case. A failure log is the reason. A pass log follows the editor level rule.
+func _card_for_case(
+		kind_id:int,
+		path:String,
+		status:String,
+		lines:PackedStringArray
+		) -> void:
+	var passed:bool = status == "pass"
+	var mark:TestTree.Mark = TestTree.Mark.OK if passed else TestTree.Mark.FAIL
+	_tests_tree.remember( path, kind_id, mark )
+	_tests_tree.repaint_path( path )
+
+	var kind_name:String = "Run"
+	match kind_id:
+		TR_CaseSession.Launch.PLAY_EDITOR:
+			kind_name = "Play Editor"
+		TR_CaseSession.Launch.PLAY_DEBUG:
+			kind_name = "Play template_debug"
+		TR_CaseSession.Launch.PLAY_RELEASE:
+			kind_name = "Play template_release"
+		TR_CaseSession.Launch.HEADLESS:
+			kind_name = "Headless -s"
+	var script_title:String = path.get_file()
+	var item:TreeItem = null
+	var root:TreeItem = _tests_tree.get_root()
+	if root != null:
+		for file_item:TreeItem in _tests_tree.files_under( root ):
+			if _tests_tree.row_path( file_item ) == path:
+				item = file_item
+				break
+	if item != null:
+		var named:TestDef = item.get_metadata( 0 )
+		script_title = "/".join( [named.name, item.get_text( 0 )] )
+
+	var info_box:InfoBox = INFO_BOX.instantiate()
+	_info_items.add_child( info_box )
+	info_box.show()
+	if not info_box.is_node_ready():
+		await info_box.ready
+	info_box.set_title( "%s  %s" % [kind_name, script_title] )
+	info_box.set_description( _script_description( path ) )
+	var word:String = "OK" if passed else "FAILED"
+	var info_text:String = ""
+	if not passed:
+		info_text = _failure_reason( lines )
+	elif Log.allows( _test_lvl, Log.Level.INFO ):
+		info_text = "\n".join( lines )
+	info_box.set_content( word, info_text )
+
+	if item == null:
+		return
+	var test_def:TestDef = item.get_metadata( 0 )
+	var result:TestResult = test_def.results.get_or_add( item, TestResult.new() )
+	result.latest = info_box
+	result.retcode = RetCode.TEST_OK if passed else RetCode.TEST_FAILED
+	result.output = []
+	if info_text != "":
+		result.output.append( info_text )
+
+
+## [constant DESCRIPTION] on the script. Empty when the constant is absent.
+func _script_description( script_path:String ) -> String:
+	var loaded:Resource = load( script_path )
+	if not loaded is Script:
+		return ""
+	var scr:Script = loaded
+	var found:Variant = TR_CaseSession.script_const( scr, "DESCRIPTION", "" )
+	if found is String:
+		var text:String = found
+		return text.strip_edges()
+	return ""
+
+
+## Notes under the case line, otherwise the refused reason, otherwise the status.
+func _failure_reason( lines:PackedStringArray ) -> String:
+	var header:String = ""
+	var notes:PackedStringArray = PackedStringArray()
+	for line:String in lines:
+		if line.begins_with( "case status=" ):
+			header = line
+			continue
+		if line == "":
+			continue
+		if notes.append( line ):
+			push_error( "main_panel._failure_reason: append failed" )
+	if not notes.is_empty():
+		return "\n".join( notes )
+
+	var reason:String = ""
+	var reason_at:int = header.find( " reason=" )
+	var path_at:int = header.find( " path=" )
+	if reason_at >= 0:
+		var end:int = path_at if path_at > reason_at else header.length()
+		reason = header.substr( reason_at + 8, end - reason_at - 8 )
+	var status:String = ""
+	var status_at:int = header.find( "status=" )
+	var runcode_at:int = header.find( " runcode=" )
+	if status_at >= 0 and runcode_at > status_at:
+		status = header.substr( status_at + 7, runcode_at - status_at - 7 )
+	if reason != "" and status != "" and status != "fail":
+		return "%s: %s" % [ status, reason ]
+	if reason != "":
+		return reason
+	if status != "" and status != "fail":
+		return status
+	if status == "fail":
+		return "body returned fail"
+	if header != "":
+		return header
+	return "failed"
 
 
 func _finish_editor(

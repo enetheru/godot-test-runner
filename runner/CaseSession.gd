@@ -436,7 +436,7 @@ static func clear_report() -> void:
 	if err != OK:
 		push_error( "TR_CaseSession.clear_report: %s" % error_string( err ) )
 
-## Print [param text] and keep its first line for the panel.
+## Print [param text] and append it to the report. The panel builds a card from it.
 static func report( text: String ) -> void:
 	print( text )
 
@@ -455,8 +455,10 @@ static func report( text: String ) -> void:
 		return
 	if prior != "" and not prior.ends_with( "\n" ) and not file.store_string( "\n" ):
 		return
-	var first: String = text.split( "\n" )[0]
-	if not file.store_line( first ):
+	if not file.store_string( text ):
+		push_error( "TR_CaseSession.report: write failed" )
+		return
+	if not text.ends_with( "\n" ) and not file.store_string( "\n" ):
 		push_error( "TR_CaseSession.report: write failed" )
 
 #endregion Report
