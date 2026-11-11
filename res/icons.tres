@@ -1,6 +1,6 @@
-[gd_resource type="Resource" format=3]
+[gd_resource type="Resource" format=3 uid="uid://3m5u42vj31h1"]
 
-[ext_resource type="Script" path="res://addons/enetheru.test-runner/scripts/icons.gd" id="1_icons"]
+[ext_resource type="Script" uid="uid://c3dtne1r54at6" path="res://addons/enetheru.test-runner/scripts/icons.gd" id="1_icons"]
 [ext_resource type="Texture2D" uid="uid://3mp4878ru2lc" path="res://addons/enetheru.test-runner/res/checklist.svg" id="2_check"]
 [ext_resource type="Texture2D" uid="uid://dvy1xigrytulx" path="res://addons/enetheru.test-runner/res/debug-rerun.svg" id="3_rerun"]
 [ext_resource type="Texture2D" uid="uid://cvot4lpp8maag" path="res://addons/enetheru.test-runner/res/file-code.svg" id="4_code"]
@@ -20,19 +20,19 @@
 [resource]
 script = ExtResource("1_icons")
 tex = Dictionary[StringName, Texture2D]({
+&"BUG_PLAY": ExtResource("8_bug"),
+&"CHECK": ExtResource("11_ok"),
 &"CHECKLIST": ExtResource("2_check"),
+&"CLOSE": ExtResource("12_cross"),
+&"COG_PLAY": ExtResource("10_cog"),
 &"DEBUG_RERUN": ExtResource("3_rerun"),
 &"FILE_CODE": ExtResource("4_code"),
 &"FOLDER_OPEN": ExtResource("5_open"),
-&"SCRIPT_TEXT_PLAY": ExtResource("6_script"),
-&"PLAY_BOX_EDIT_OUTLINE": ExtResource("7_play"),
-&"BUG_PLAY": ExtResource("8_bug"),
-&"MOVIE_PLAY": ExtResource("9_movie"),
-&"COG_PLAY": ExtResource("10_cog"),
-&"CHECK": ExtResource("11_ok"),
-&"CLOSE": ExtResource("12_cross"),
 &"MINUS": ExtResource("13_minus"),
+&"MOVIE_PLAY": ExtResource("9_movie"),
+&"PLAY_BOX_EDIT_OUTLINE": ExtResource("7_play"),
+&"SCRIPT_TEXT_PLAY": ExtResource("6_script"),
 &"TRIANGLE_DOWN": ExtResource("14_down"),
-&"UNFOLD_MORE": ExtResource("15_more"),
-&"UNFOLD_LESS": ExtResource("16_less")
+&"UNFOLD_LESS": ExtResource("16_less"),
+&"UNFOLD_MORE": ExtResource("15_more")
 })

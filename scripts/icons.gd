@@ -27,9 +27,11 @@ func get_tex( name:StringName ) -> Texture2D:
 func at_size( source:Texture2D, size:Vector2i ) -> Texture2D:
 	if source == null:
 		return null
+
 	if size.x <= 0 \
 	or size.y <= 0:
 		return source
+
 	var source_size:Vector2 = source.get_size()
 	if int( source_size.x ) == size.x \
 	and int( source_size.y ) == size.y:
