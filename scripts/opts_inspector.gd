@@ -7,49 +7,24 @@ extends EditorInspectorPlugin
 
 const OptsScript = preload( "test_runner_opts.gd" )
 
-const _READY_TIP:String = "Capture a Tracy trace for each run."
-const _LOCKED_TIP:String = "Set the Tracy capture executable, Python, and crop scripts before this can be enabled."
-const _NO_PROFILER_TIP:String = "This editor has no Profiler, so Tracy capture is unavailable."
 
-
-func _can_handle( object:Object ) -> bool:
-	return object is OptsScript
-
-
-func _parse_begin( _object:Object ) -> void:
-	var hint := Label.new()
-	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	hint.text = "This resource is the shared Test Runner options. The dock and the case menu read it."
-	add_custom_control( hint )
-
-
-func _parse_property(
-		_object:Object,
-		_type:Variant.Type,
-		prop:String,
-		_hint_type:PropertyHint,
-		_hint_string:String,
-		_usage:int,
-		_wide:bool,
-	) -> bool:
-	if prop == "lvl":
-		add_property_editor( "lvl", LevelEditor.new() )
-		return true
-	if prop == "tracy":
-		add_property_editor( "tracy", TracyEditor.new() )
-		return true
-	if prop == "tracy_pad_s":
-		add_property_editor( "tracy_pad_s", PadEditor.new() )
-		return true
-	return false
-
-
-## Full ceiling list. The exported enum only has Notice and above.
+##[codeblock lang=text]
+##│ _                _ ___    _ _ _
+##│| |   _____ _____| | __|__| (_) |_ ___ _ _
+##│| |__/ -_) V / -_) | _|/ _` | |  _/ _ \ '_|
+##│|____\___|\_/\___|_|___\__,_|_|\__\___/_|
+##╰─────────────────────────────────────────────
+##[/codeblock]Full ceiling list. The exported enum only has Notice and above.
 class LevelEditor extends EditorProperty:
 	const _Log = preload( "../logging.gd" )
 
 	var _option:OptionButton
+
+
+	func _on_selected( index:int ) -> void:
+		if index < 0 or index >= _Log.CEILINGS.size():
+			return
+		emit_changed( &"lvl", _Log.CEILINGS[ index ] )
 
 
 	func _init() -> void:
@@ -76,18 +51,24 @@ class LevelEditor extends EditorProperty:
 		_option.set_block_signals( false )
 
 
-	func _on_selected( index:int ) -> void:
-		if index < 0 or index >= _Log.CEILINGS.size():
-			return
-		emit_changed( &"lvl", _Log.CEILINGS[ index ] )
-
-
+##[codeblock lang=text]
+##│ _____                 ___    _ _ _
+##│|_   _| _ __ _ __ _  _| __|__| (_) |_ ___ _ _
+##│  | || '_/ _` / _| || | _|/ _` | |  _/ _ \ '_|
+##│  |_||_| \__,_\__|\_, |___\__,_|_|\__\___/_|
+##╰──────────────────|__/──────────────────────────
+##[/codeblock]TracyEditor
+##
 ## Same gate as the dock. No Profiler hides the switch. A missing capture setup disables it.
 class TracyEditor extends EditorProperty:
 	const _Capture = preload( "../runner/TracyCapture.gd" )
 
 	var _check:CheckButton
 	var _listening:bool = false
+
+
+	func _on_toggled( pressed:bool ) -> void:
+		emit_changed( &"tracy", pressed )
 
 
 	func _init() -> void:
@@ -138,16 +119,33 @@ class TracyEditor extends EditorProperty:
 		_check.set_pressed_no_signal( false )
 
 
-	func _on_toggled( pressed:bool ) -> void:
-		emit_changed( &"tracy", pressed )
-
-
-## Pad slider. Locked by the same capture gate as the Tracy switch.
+##[codeblock lang=text]
+##│ ___         _ ___    _ _ _
+##│| _ \__ _ __| | __|__| (_) |_ ___ _ _
+##│|  _/ _` / _` | _|/ _` | |  _/ _ \ '_|
+##│|_| \__,_\__,_|___\__,_|_|\__\___/_|
+##╰────────────────────────────────────────
+##[/codeblock] Pad slider
+##
+## Locked by the same capture gate as the Tracy switch.
 class PadEditor extends EditorProperty:
 	const _Capture = preload( "../runner/TracyCapture.gd" )
 
+
 	var _slider:EditorSpinSlider
 	var _listening:bool = false
+
+
+	func _on_value( value:float ) -> void:
+		if _slider.read_only:
+			return
+		emit_changed( &"tracy_pad_s", value, &"", true )
+
+
+	func _on_ungrabbed() -> void:
+		if _slider.read_only:
+			return
+		emit_changed( &"tracy_pad_s", _slider.value )
 
 
 	func _init() -> void:
@@ -195,13 +193,46 @@ class PadEditor extends EditorProperty:
 		_slider.set_value_no_signal( opts.tracy_pad_s )
 
 
-	func _on_value( value:float ) -> void:
-		if _slider.read_only:
-			return
-		emit_changed( &"tracy_pad_s", value, &"", true )
+const _READY_TIP:String = "Capture a Tracy trace for each run."
+const _LOCKED_TIP:String = "Set the Tracy capture executable, Python, and crop scripts before this can be enabled."
+const _NO_PROFILER_TIP:String = "This editor has no Profiler, so Tracy capture is unavailable."
 
 
-	func _on_ungrabbed() -> void:
-		if _slider.read_only:
-			return
-		emit_changed( &"tracy_pad_s", _slider.value )
+#      ██████  ██    ██ ███████ ██████  ██████  ██ ██████  ███████ ███████     #
+#     ██    ██ ██    ██ ██      ██   ██ ██   ██ ██ ██   ██ ██      ██          #
+#     ██    ██ ██    ██ █████   ██████  ██████  ██ ██   ██ █████   ███████     #
+#     ██    ██  ██  ██  ██      ██   ██ ██   ██ ██ ██   ██ ██           ██     #
+#      ██████    ████   ███████ ██   ██ ██   ██ ██ ██████  ███████ ███████     #
+func                        ________OVERRIDES________              ()->void:pass
+
+func _can_handle( object:Object ) -> bool:
+	return object is OptsScript
+
+
+func _parse_begin( _object:Object ) -> void:
+	var hint := Label.new()
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hint.text = "This resource is the shared Test Runner options. The dock and the case menu read it."
+	add_custom_control( hint )
+
+
+func _parse_property(
+		_object:Object,
+		_type:Variant.Type,
+		prop:String,
+		_hint_type:PropertyHint,
+		_hint_string:String,
+		_usage:int,
+		_wide:bool,
+	) -> bool:
+	if prop == "lvl":
+		add_property_editor( "lvl", LevelEditor.new() )
+		return true
+	if prop == "tracy":
+		add_property_editor( "tracy", TracyEditor.new() )
+		return true
+	if prop == "tracy_pad_s":
+		add_property_editor( "tracy_pad_s", PadEditor.new() )
+		return true
+	return false
