@@ -1,0 +1,13 @@
+[gd_resource type="Resource" format=3 uid="uid://cqlxf6tfcdgum"]
+
+[ext_resource type="Script" uid="uid://mrmps03qjing" path="res://addons/enetheru.test-runner/runner/hooks/tracy_opts.gd" id="1_opts"]
+
+[resource]
+script = ExtResource("1_opts")
+python_exe = "C:/Users/nicho/AppData/Local/Programs/Python/Python314/python.exe"
+capture_exe = "C:/git/wolfpld/tracy/capture/cmake-build-release-visual-studio/tracy-capture.exe"
+capture_scripts = "C:/Godot/src/godot-private/misc/scripts/tracy"
+pad_s = 0.0129854646707089
+pad_samples = 32
+late_allowance_s = 3.0
+features = 8191

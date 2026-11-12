@@ -21,7 +21,7 @@ class TestDef extends RefCounted:
 class TestResult extends RefCounted:
 	## Panel widget for this run.
 	var latest:InfoBox
-	var retcode:TR_Base.RetCode
+	var retcode:int = 0
 	var output:Array
 
 	func _to_string() -> String:

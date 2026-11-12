@@ -372,12 +372,15 @@ func add_target_properties() -> void:
 		if ProjectSettings.has_setting(setting_full):
 			var setting_value:Variant = ProjectSettings.get_setting(setting_full)
 			ProjectSettings.add_property_info(setting_info)
-			if setting_value == property_value:
-				continue
-			_target.set(property_name, setting_value)
+			if setting_value != property_value:
+				_target.set(property_name, setting_value)
 		else:
 			ProjectSettings.set_setting(setting_full, property_value)
 			ProjectSettings.add_property_info(setting_info)
+
+		# add_property_info does not take usage. Internal keeps a stored setting out of the list.
+		if not ( usage & PROPERTY_USAGE_EDITOR ):
+			ProjectSettings.set_as_internal( setting_full, true )
 
 
 ## Pull ProjectSettings values into the target; emit [signal settings_changed].

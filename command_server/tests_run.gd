@@ -1,7 +1,7 @@
 @tool
 extends CommandServerTool
 
-# Privileged: confirm dialog then TR_Base runs via TR_Service.
+# Privileged: confirm dialog then the service runs the case scripts.
 # Default sequential; [code]parallel[/code] matches TestRunner UI (launch all,
 # no await between suites). Do NOT await here — bare RefCounted coroutines are
 # unreliable. Service is a Node and completes via begin_run → on_done.

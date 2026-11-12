@@ -8,10 +8,12 @@ const CaseMenu = preload( "uid://bmxtuig6f1i7d" )
 
 ## Plugin Settings
 const SettingsScript = preload( "uid://7tb57rb6jgsd" )
-const TR_Opts = preload( "uid://c3rwpcm55iy6r" )
 const TR_Gate = preload( "uid://c8rungatehold1" )
 const OptsInspector = preload( "uid://dq1b7yvbgshko" )
-const SETTINGS_PREFIX:String = TR_Opts.PREFIX
+const Self = preload( "plugin.gd" )
+
+## Addon folder, taken once from this script's path. [code]plugin.gd[/code] sits in that folder.
+static var addon_root:String = ""
 
 ## ExportPlugin
 const _ExportPlugin = preload( "uid://b8k2h8yctcagr" )
@@ -36,6 +38,12 @@ var _opts:TR_Opts
 
 # ProjectSettings mirror for the options resource.
 var _settings_hlp:SettingsScript
+
+# ProjectSettings mirrors for hook option resources.
+var _hook_settings:Array = []
+
+# True while hook settings are being rebuilt, so changed does not re-enter.
+var _binding_hooks:bool = false
 
 # [method _enter_tree] adds these, inspector and export first.
 
@@ -97,9 +105,47 @@ func _on_test_running( running:bool ) -> void:
 #      ██████    ████   ███████ ██   ██ ██   ██ ██ ██████  ███████ ███████     #
 func                        ________OVERRIDES________              ()->void:pass
 
+static func addon_dir() -> String:
+	if not addon_root.is_empty():
+		return addon_root
+
+	# The preload is this script resource. The analyzer types it as the plugin instance.
+	var packed:Variant = Self
+	if packed is Script:
+		var scr:Script = packed
+		addon_root = scr.resource_path.get_base_dir()
+	return addon_root
+
+
 func _init() -> void:
+	addon_root = addon_dir()
 	_opts = TR_Opts.shared()
-	_settings_hlp = SettingsScript.new( _opts, SETTINGS_PREFIX )
+	if not _opts.changed.is_connected( _on_opts_changed ):
+		var err:int = _opts.changed.connect( _on_opts_changed )
+		if err != OK:
+			push_error( "TestRunner._init: opts connect failed (%s)" % error_string( err ) )
+	_settings_hlp = SettingsScript.new( _opts, TR_Opts.PREFIX )
+	_rebind_hooks()
+
+
+func _on_opts_changed() -> void:
+	_rebind_hooks()
+
+
+func _rebind_hooks() -> void:
+	if _binding_hooks:
+		return
+	_binding_hooks = true
+	_hook_settings.clear()
+	for path:String in TR_Opts.hook_paths():
+		var cfg:TR_HookOpts = TR_Opts.configuration_for( path )
+		if cfg == null:
+			continue
+		var prefix:String = cfg.settings_prefix()
+		if prefix.is_empty():
+			prefix = TR_Opts.PREFIX.path_join( "hooks" ).path_join( path.get_file().get_basename().to_lower() )
+		_hook_settings.append( SettingsScript.new( cfg, prefix ) )
+	_binding_hooks = false
 
 
 func _enter_tree() -> void:
@@ -112,6 +158,10 @@ func _enter_tree() -> void:
 	_service = ServiceScript.new()
 	_service.name = "TestRunnerService"
 	add_child( _service )
+	if not _service.is_connected( &"tests_reloaded", _rebind_hooks ):
+		var reload_err:int = _service.connect( &"tests_reloaded", _rebind_hooks )
+		if reload_err != OK:
+			push_error( "TestRunner._enter_tree: reload connect failed (%s)" % error_string( reload_err ) )
 	_service.call( &"reload" )
 
 	main_panel_instance = MainPanel.instantiate()
@@ -235,7 +285,7 @@ func _begin_headless_tests() -> void:
 		push_error( "GDFB_HEADLESS_TESTS: TestRunnerService is missing" )
 		get_tree().quit( 1 )
 		return
-	print( "GDFB_HEADLESS_TESTS: running %s" % TR_Opts.tests_root() )
+	print( "GDFB_HEADLESS_TESTS: running %s" % ", ".join( TR_Opts.cases_roots() ) )
 	var resolved:Dictionary = _service.call( &"resolve_targets", "all" )
 	var err := str( resolved.get( &"error", "" ) )
 	if not err.is_empty():

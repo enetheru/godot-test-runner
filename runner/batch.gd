@@ -5,9 +5,9 @@ extends Node
 ## Sequential by default. Parallel launches every script without awaiting the previous.
 
 const TR_Service = preload( "uid://dmaf85hvsuhon" )
-const RetCode = TR_Base.RetCode
 
 const MAX_OUTPUT_LINES:int = 200
+const _TRACY_HOOK:String = "res://addons/enetheru.test-runner/runner/hooks/TracyCapture.gd"
 
 
 # ██████  ██████   ██████  ██████  ███████ ██████  ████████ ██ ███████ ███████ #
@@ -54,12 +54,14 @@ func start(
 		"tests": [],
 	}
 
-	var use_tracy:bool = opts.get( "tracy", false )
-	results["tracy"] = use_tracy
+	var tracy_mode:int = -1
+	if opts.has( "tracy" ):
+		tracy_mode = 1 if opts.get( "tracy", false ) else 0
+	results["tracy"] = tracy_mode == 1
 	if use_parallel:
-		_run_parallel( paths, use_lvl, use_tracy, results, run_id, on_done )
+		_run_parallel( paths, use_lvl, tracy_mode, results, run_id, on_done )
 	else:
-		await _run_sequential( paths, use_lvl, use_tracy, results, run_id )
+		await _run_sequential( paths, use_lvl, tracy_mode, results, run_id )
 		_finish( results, on_done )
 
 
@@ -73,18 +75,18 @@ func                        ________INTERNAL_________              ()->void:pass
 func _run_sequential(
 			paths:PackedStringArray,
 			use_lvl:int,
-			use_tracy:bool,
+			tracy_mode:int,
 			results:Dictionary,
 			run_id:String ) -> void:
 	var total:int = paths.size()
 	var i:int = 0
 	for path:String in paths:
 		i += 1
-		var entry:Dictionary = await _run_one( path, use_lvl, use_tracy )
+		var entry:Dictionary = await _run_one( path, use_lvl, tracy_mode )
 		var tests_arr:Array = results["tests"]
 		tests_arr.append( entry )
 		results["ran"] = results["ran"] + 1
-		if entry.get( "retcode", RetCode.TEST_FAILED ) == RetCode.TEST_OK:
+		if entry.get( "retcode", TR_CaseSession.TEST_FAILED ) == TR_CaseSession.TEST_OK:
 			results["passed"] = results["passed"] + 1
 		else:
 			results["failed"] = results["failed"] + 1
@@ -100,7 +102,7 @@ func _run_sequential(
 func _run_parallel(
 			paths:PackedStringArray,
 			use_lvl:int,
-			use_tracy:bool,
+			tracy_mode:int,
 			results:Dictionary,
 			run_id:String,
 			on_done:Callable ) -> void:
@@ -126,7 +128,7 @@ func _run_parallel(
 				i,
 				total,
 				use_lvl,
-				use_tracy,
+				tracy_mode,
 				results,
 				run_id,
 				left,
@@ -139,16 +141,16 @@ func _run_slot(
 			index:int,
 			total:int,
 			use_lvl:int,
-			use_tracy:bool,
+			tracy_mode:int,
 			results:Dictionary,
 			run_id:String,
 			left:Array,
 			on_done:Callable ) -> void:
-	var entry:Dictionary = await _run_one( path, use_lvl, use_tracy )
+	var entry:Dictionary = await _run_one( path, use_lvl, tracy_mode )
 	var tests_arr:Array = results["tests"]
 	tests_arr[index] = entry
 
-	if entry.get( "retcode", RetCode.TEST_FAILED ) == RetCode.TEST_OK:
+	if entry.get( "retcode", TR_CaseSession.TEST_FAILED ) == TR_CaseSession.TEST_OK:
 		results["passed"] = results["passed"] + 1
 	else:
 		results["failed"] = results["failed"] + 1
@@ -173,12 +175,27 @@ func _finish( results:Dictionary, on_done:Callable ) -> void:
 		on_done.call( results )
 
 
-func _run_one( script_path:String, use_lvl:int, use_tracy:bool = false ) -> Dictionary:
+## [param tracy_mode] [code]1[/code] forces the Tracy hook on. [code]0[/code] drops it from the options list.
+func _apply_tracy_mode( target:Object, tracy_mode:int ) -> void:
+	if target == null or tracy_mode < 0:
+		return
+	var prop:StringName = &"hook_paths" if tracy_mode == 1 else &"hook_skip"
+	var raw:Variant = target.get( prop )
+	var paths:PackedStringArray = raw if raw is PackedStringArray else PackedStringArray()
+	if paths.has( _TRACY_HOOK ):
+		return
+	if paths.append( _TRACY_HOOK ):
+		push_error( "batch: hook path append failed" )
+		return
+	target.set( prop, paths )
+
+
+func _run_one( script_path:String, _use_lvl:int, tracy_mode:int = -1 ) -> Dictionary:
 	var group_name:String = _group_for_path( script_path )
 	var entry:Dictionary = {
 		"path": script_path,
 		"group": group_name,
-		"retcode": RetCode.TEST_FAILED,
+		"retcode": TR_CaseSession.TEST_FAILED,
 		"status": "FAILED",
 		"output": [],
 	}
@@ -202,64 +219,17 @@ func _run_one( script_path:String, use_lvl:int, use_tracy:bool = false ) -> Dict
 		return entry
 
 	if TR_CaseSession.is_case_script( script ):
-		return await _run_case( script, entry, use_tracy )
+		return await _run_case( script, entry, tracy_mode )
 
-	var instance_v:Object = script.new()
-	if instance_v == null:
-		entry["output"] = ["script.new() returned null: %s" % script_path]
-		return entry
-
-	# Prefer TR_Base; accept duck-typed run_test + runcode/output.
-	if not instance_v is TR_Base \
-	and not instance_v.has_method( &"run_test" ):
-		entry["output"] = ["Not a TR_Base (no run_test): %s" % script_path]
-		if instance_v is Object and is_instance_valid( instance_v ):
-			( instance_v as Object ).free()
-		return entry
-
-	var instance:Object = instance_v
-	_try_set( instance, "local_lvl", use_lvl )
-	# 0 skips capture even when the panel toggle is on. 1 installs it for this run.
-	_try_set( instance, "capture_request", 1 if use_tracy else 0 )
-
-	# Hold a hard ref for the await lifetime (same idea as TR_Base._cycleref).
-	var _keep:Object = instance
-	@warning_ignore( "redundant_await" )
-	if instance.has_method( &"run_harness" ):
-		await instance.call( &"run_harness" )
-	elif instance.has_method( &"run_test" ):
-		await instance.call( &"run_test" )
-	else:
-		entry["output"] = ["run_test missing after type check: %s" % script_path]
-		return entry
-
-	var retcode:int = instance.get( "runcode" )
-	var out_v:Array = instance.get( "output" )
-	var output:Array = out_v.duplicate()
-
-	entry["retcode"] = retcode
-	var status:String = "OK" if retcode == RetCode.TEST_OK else "FAILED"
-	# TR_Base max_runtime leaves a distinctive log line when the timer wins.
-	for line:Variant in output:
-		if str( line ).contains( "Timeout was reached" ):
-			status = "TIMEOUT"
-			break
-	if instance.get( "_timed_out" ) == true:
-		status = "TIMEOUT"
-	entry["status"] = status
-	entry["output"] = _cap_output( output )
-
-	_keep = null
-	if is_instance_valid( instance ) and not ( instance is RefCounted ):
-		instance.free()
+	entry["output"] = ["Not a case: %s" % script_path]
 	return entry
 
 
-## Editor host. [param use_tracy] is the command override, same as TR_Base.
-func _run_case( script:GDScript, entry:Dictionary, use_tracy:bool ) -> Dictionary:
+## Editor host. [param tracy_mode] [code]1[/code] adds the Tracy hook, [code]0[/code] skips the options-list copy, and [code]-1[/code] leaves the list alone.
+func _run_case( script:GDScript, entry:Dictionary, tracy_mode:int ) -> Dictionary:
 	var session := TR_CaseSession.new()
 	session.host = TR_CaseSession.Host.EDITOR
-	session.capture_request = 1 if use_tracy else 0
+	_apply_tracy_mode( session, tracy_mode )
 	var scene_tree:SceneTree = get_tree()
 	if scene_tree == null:
 		var loop:MainLoop = Engine.get_main_loop()
@@ -276,7 +246,7 @@ func _run_case( script:GDScript, entry:Dictionary, use_tracy:bool ) -> Dictionar
 	await session.run_await( body )
 	var code:int = session.runcode
 	entry["retcode"] = code
-	var label:String = "OK" if code == RetCode.TEST_OK else "FAILED"
+	var label:String = "OK" if code == TR_CaseSession.TEST_OK else "FAILED"
 	if session.status == "timeout":
 		label = "TIMEOUT"
 	entry["status"] = label
@@ -285,15 +255,6 @@ func _run_case( script:GDScript, entry:Dictionary, use_tracy:bool ) -> Dictionar
 		lines.append( row )
 	entry["output"] = _cap_output( lines )
 	return entry
-
-
-func _try_set( obj:Object, prop:String, value:Variant ) -> void:
-	if obj == null:
-		return
-	for p:Dictionary in obj.get_property_list():
-		if str( p.get( "name", "" ) ) == prop:
-			obj.set( prop, value )
-			return
 
 
 func _cap_output( lines:Array ) -> Array:

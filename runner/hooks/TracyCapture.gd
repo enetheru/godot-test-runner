@@ -1,12 +1,13 @@
 @tool
 extends TR_Hook
 
-## Capture installed on [member TR_Base.hooks].
+## Capture hook. The runner loads this script and waits on [signal TR_Hook.settled].
 ##
-## [method install] assigns this object. A run with [member TR_Base.hooks]
-## empty leaves the capture off. [method pre] runs before [method TR_Base._setup].
-## [method post] runs after the procedure, including a timeout. The trace is
-## the test script's name, the run kind, and [code].tracy[/code], in that script's folder.
+## [method _pre] runs before setup. [method _post] runs after the procedure,
+## including a timeout. Paths, the budget, and the phase times come from
+## [member session]. The executable, Python, and pad come from this hook's
+## options. The trace is the script's name, the run kind, and [code].tracy[/code],
+## in that script's folder.
 ## The crop is [code]trim_tracy_tail.py[/code] then [code]shift_tracy_start.py[/code]
 ## [code]--trim-init[/code]. Another Tracy server already attached refuses
 ## the connection. [signal Profiler.server_disconnected] is watched until the
@@ -14,27 +15,8 @@ extends TR_Hook
 ## higher budget. One second open after the procedure is allowed. Past that,
 ## a lower budget is named when the window would shrink and still leave that second.
 
-const CONNECT_WAIT_SEC:int = 3
-const CONNECT_WAIT_MSEC:int = 3000
-const CAPTURE_TIMEOUT_MSEC:int = 3000
-## How long the capture may stay open after the procedure before that slack is excessive.
-const _LATE_ALLOWANCE_S:float = 1.0
-## Every category the singleton accepts.
-const _CATEGORIES:PackedStringArray = [
-	"core", "script", "physics", "render", "render_gpu", "audio",
-	"nav", "io", "shader", "editor", "net", "thread", "gdextension",
-]
-## Every feature the singleton accepts. [code]memory[/code] cannot change after startup.
-const _FEATURES:PackedStringArray = [
-	"zones", "plots", "messages", "memory", "locks", "gpu",
-	"frames", "frame_images", "auto_gdscript", "log",
-]
-
-const _CAPTURE_EXES:PackedStringArray = []
-const _PYTHON_EXES:PackedStringArray = []
-const _TRACY_SCRIPT_DIRS:PackedStringArray = []
 const Log = preload( "uid://br7jtx5cntuan" )
-const TR_Opts = preload( "uid://c3rwpcm55iy6r" )
+const TracyOpts = preload( "tracy_opts.gd" )
 
 # ██████  ██████   ██████  ██████  ███████ ██████  ████████ ██ ███████ ███████ #
 # ██   ██ ██   ██ ██    ██ ██   ██ ██      ██   ██    ██    ██ ██      ██      #
@@ -42,15 +24,6 @@ const TR_Opts = preload( "uid://c3rwpcm55iy6r" )
 # ██      ██   ██ ██    ██ ██      ██      ██   ██    ██    ██ ██           ██ #
 # ██      ██   ██  ██████  ██      ███████ ██   ██    ██    ██ ███████ ███████ #
 func                        ________PROPERTIES_______              ()->void:pass
-
-# Logger contract. install copies the test's level onto this.
-## Inclusive [constant Log.Level] for lines this capture prints.
-var local_lvl:int = Log.Level.ERROR
-
-# install assigns the subject. The handshake then fills the process state.
-
-# [TR_Base] or [TR_CaseSession]. The capture reads either object's fields.
-var _test:Object
 
 # tracy-capture process id. -1 until launch.
 var _capture_pid:int = -1
@@ -102,51 +75,33 @@ var _procedure_end_msec:int = 0
 var _gap_reported:bool = false
 
 
-#         ███    ███ ███████ ████████ ██   ██  ██████  ██████  ███████         #
-#         ████  ████ ██         ██    ██   ██ ██    ██ ██   ██ ██              #
-#         ██ ████ ██ █████      ██    ███████ ██    ██ ██   ██ ███████         #
-#         ██  ██  ██ ██         ██    ██   ██ ██    ██ ██   ██      ██         #
-#         ██      ██ ███████    ██    ██   ██  ██████  ██████  ███████         #
-func                        _________METHODS_________              ()->void:pass
+#          ██████  ██    ██ ███████ ██████  ██████  ██ ██████  ███████         #
+#         ██    ██ ██    ██ ██      ██   ██ ██   ██ ██ ██   ██ ██              #
+#         ██    ██ ██    ██ █████   ██████  ██████  ██ ██   ██ █████           #
+#         ██    ██  ██  ██  ██      ██   ██ ██   ██ ██ ██   ██ ██              #
+#          ██████    ████   ███████ ██   ██ ██   ██ ██ ██████  ███████         #
+func                        ________OVERRIDE_________              ()->void:pass
 
-static func _opts() -> TR_Opts:
-	return TR_Opts.shared() as TR_Opts
-
-
-## Assign [member hooks] when it is still empty.
-## [TR_Base] and [TR_CaseSession] both carry that property.
-static func install( test:Object ) -> void:
-	if test == null:
-		return
-	if test.get(&"hooks") != null:
-		return
-	var scr:GDScript = load( "uid://c38qii7m273x0" ) as GDScript
-	var capture:Object = scr.new()
-	capture.set( &"_test", test )
-	var lvl:Variant = test.get(&'local_lvl')
-	if lvl is int:
-		var level:int = lvl
-		capture.set( &"local_lvl", level )
-	test.set(&"hooks", capture)
+static func _hook_opts() -> GDScript:
+	return TracyOpts
 
 
-## Install when the saved flag is on and this binary registered the Profiler singleton.
-static func install_saved( test:Object ) -> void:
-	if is_instance_valid(test) \
-	and Engine.has_singleton(&'Profiler'):
-		if _opts().tracy:
-			install(test)
+## Options-list gate. A case constant still runs this script.
+func _accept() -> bool:
+	var opts:TracyOpts = _opts()
+	var on:bool = opts != null and opts.enabled
+	return on and is_configured() and Engine.has_singleton( &"Profiler" )
 
 
 ## Launch the capture and wait until this process accepts it.
-func pre() -> Error:
-	if _test == null:
-		_log_err("no owner")
+func _pre() -> Error:
+	if session == null:
+		Log.err( "no owner" )
 		return ERR_UNCONFIGURED
 
 	_profiler = Engine.get_singleton(&'Profiler')
 	if _profiler == null:
-		_log_err("Profiler singleton is missing. This binary has no Tracy client.")
+		session.log( Log.Level.ERROR, "Profiler singleton is missing. This binary has no Tracy client.")
 		return ERR_UNAVAILABLE
 
 	var was_v:Variant = _profiler.call(&'is_enabled')
@@ -157,12 +112,9 @@ func pre() -> Error:
 	_profiler.call(&'set_enabled', false)
 
 	if Profiler.is_server_connected():
-		_log_wrn("Tracy server is already connected")
+		session.log( Log.Level.WARNING, "Tracy server is already connected")
 		_capture_connected = true
-		if _arm_profiler and _profiler != null:
-			_enable_categories()
-			_enable_features()
-			_profiler.call(&'set_enabled', true)
+		_arm_recording()
 		_server_already_connected = true
 		_listen_server_disconnected()
 		return OK
@@ -174,25 +126,26 @@ func pre() -> Error:
 
 	var tree:SceneTree = _scene_tree()
 	if tree == null:
-		_log_err("no SceneTree")
+		session.log( Log.Level.ERROR, "no SceneTree")
 		return ERR_UNCONFIGURED
 
 	_ensure_timer(tree)
 
 	var exe:String = _capture_exe()
 	if exe.is_empty():
-		_log_err("tracy-capture was not found")
+		_drop_timer()
+		session.log( Log.Level.ERROR, "tracy-capture was not found")
 		return ERR_FILE_NOT_FOUND
 
 	var script_path:String = _script_path()
 	var capture_file:String = _capture_res_path( script_path )
 	_trace_path = _absolute_trace( capture_file )
-	_log_note("script %s" % script_path)
+	session.log( Log.Level.NOTICE, "script %s" % script_path)
 
 	_capture_connected = false
 	var window_sec:int = _capture_window_sec()
 	_window_sec = window_sec
-	_capture_budget_msec = window_sec * 1000 + CAPTURE_TIMEOUT_MSEC
+	_capture_budget_msec = window_sec * 1000 + roundi( _capture_timeout_s() * 1000.0 )
 	var _capture_cmd := PackedStringArray([
 		"-o", _trace_path,
 		"-a", "127.0.0.1",
@@ -200,34 +153,39 @@ func pre() -> Error:
 		"-f",
 		"-s", str(window_sec),
 	])
-	Log.lvl(Log.Level.DEBUG, "tracy-capture " + " ".join(_capture_cmd), _test)
+	session.log( Log.Level.DEBUG, "tracy-capture " + " ".join( _capture_cmd ) )
 	_capture_launched_msec = Time.get_ticks_msec()
 	_capture_pid = OS.create_process(exe, _capture_cmd, false)
 	if _capture_pid < 0:
 		_restore_profiler()
-		_log_err("tracy-capture failed to start")
+		session.log( Log.Level.ERROR, "tracy-capture failed to start")
 		return ERR_CANT_CREATE
-	_log_note("capture %s pid=%d port=%d window=%ds" % [
+	session.log( Log.Level.NOTICE, "capture %s pid=%d port=%d window=%ds" % [
 		capture_file, _capture_pid, Profiler.get_port(), window_sec,
 	])
 
 	# wait for connection using a timer, the connection signal handler will
 	# trigger this timers timeout. if there is time left on the clock it
 	# succeeded
+	var time_left:float = 0.0
 	if _capture_pid >= 0 \
 	and OS.is_process_running(_capture_pid):
-		_timer.start(CONNECT_WAIT_SEC)
+		_timer.start( _connect_wait_s() )
 		_timer.paused = false
 		await _timer.timeout
+		time_left = _timer.time_left
 
-	if not _timer.time_left:
+	var connected:bool = _capture_connected
+	_drop_timer()
+
+	if not time_left:
 		_stop_capture()
-		_log_err("timed out waiting for tracy-capture to connect on port %d." % Profiler.get_port())
+		session.log( Log.Level.ERROR, "timed out waiting for tracy-capture to connect on port %d." % Profiler.get_port())
 		return ERR_CANT_CONNECT
 
-	if not _capture_connected:
+	if not connected:
 		_stop_capture()
-		_log_err("tracy-capture did not connect on port %d." % Profiler.get_port())
+		session.log( Log.Level.ERROR, "tracy-capture did not connect on port %d." % Profiler.get_port())
 		return ERR_CANT_CONNECT
 
 	_capture_started_msec = Time.get_ticks_msec()
@@ -241,21 +199,20 @@ func pre() -> Error:
 
 
 ## Wait until the capture process saves the file, then crop it.
-func post() -> Error:
+func _post() -> Error:
 	# The procedure has returned. An early disconnect can be reported now.
 	# The listener stays up so a disconnect during the capture wait is timed too.
 	_mark_procedure_end()
 	if _server_already_connected:
 		_drop_server_disconnected()
-		_restore_categories()
-		_restore_features()
+		_restore_masks()
 		_profiler.call(&'set_enabled', _profiler_was_enabled)
 		return OK
 
 	# Silence before the wait. The capture process is still connected, and this thread keeps framing.
 	var tree:SceneTree = _scene_tree()
 	if tree == null:
-		_log_err("no SceneTree")
+		session.log( Log.Level.ERROR, "no SceneTree")
 		_restore_profiler()
 		return ERR_UNCONFIGURED
 
@@ -265,8 +222,7 @@ func post() -> Error:
 	# to wait or we end up adding noise to the trace.
 	await tree.physics_frame
 
-	_restore_categories()
-	_restore_features()
+	_restore_masks()
 
 	# [code]-s[/code] ends the process. Killing it would drop the file.
 	while _capture_pid >= 0 \
@@ -289,42 +245,45 @@ func post() -> Error:
 	_capture_pid = -1
 	_restore_profiler()
 	var cropped:Error = _crop_trace()
-	if cropped != OK:
-		return cropped
-
-	return OK
-
-
-func _log_err(content:Variant) -> void:
-	Log.err(content, _test)
-
-
-func _log_wrn(content:Variant) -> void:
-	Log.wrn(content, _test)
-
-
-func _log_note(content:Variant) -> void:
-	Log.lvl(Log.Level.NOTICE, content, _test)
+	return cropped
 
 
 ## Write [param text] into the open capture.
-func message(text:String) -> void:
+func _message( text:String ) -> void:
 	# [method Profiler.message] is dropped while recording is silenced.
 	if _profiler == null:
 		return
-	_profiler.call(&'message', text)
+	_profiler.call( &'message', text )
+
+
+#       ██ ███    ██ ████████ ███████ ██████  ███    ██  █████  ██             #
+#       ██ ████   ██    ██    ██      ██   ██ ████   ██ ██   ██ ██             #
+#       ██ ██ ██  ██    ██    █████   ██████  ██ ██  ██ ███████ ██             #
+#       ██ ██  ██ ██    ██    ██      ██   ██ ██  ██ ██ ██   ██ ██             #
+#       ██ ██   ████    ██    ███████ ██   ██ ██   ████ ██   ██ ███████        #
+func                        ________INTERNAL_________              ()->void:pass
+
+#region Session - Case session fields and the trace path.
+#MARK: Session
+func                        __Session________________              ()->void:pass
+# │ ___            _
+# │/ __| ___ _____(_)___ _ _
+# │\__ \/ -_|_-<_-< / _ \ ' \
+# │|___/\___/__/__/_\___/_||_|
+# ╰────────────────────────────
+
+static func _opts() -> TracyOpts:
+	return TracyOpts.shared() as TracyOpts
+
+
+func _owner() -> Object:
+	return session
 
 
 func _scene_tree() -> SceneTree:
-	if _test == null:
+	if session == null:
 		return null
-	var found:Variant = _test.get(&'scene_tree')
-	if found == null:
-		found = _test.get(&'tree')
-	if found is SceneTree:
-		var tree:SceneTree = found
-		return tree
-	return null
+	return session.tree
 
 
 ## [code]res://[/code] trace path. The run kind keeps each launch's file.
@@ -334,14 +293,9 @@ func _capture_res_path( script_path:String ) -> String:
 
 ## editorscript when the owner does not name a launch.
 func _run_kind() -> String:
-	if _test == null:
+	if session == null or session.run_kind.is_empty():
 		return "editorscript"
-	var named:Variant = _test.get( &'run_kind' )
-	if named is String:
-		var kind:String = named
-		if not kind.is_empty():
-			return kind
-	return "editorscript"
+	return session.run_kind
 
 
 ## Native path beside the script. A pack has no project directory, so [code]CASE_PROJECT[/code] supplies it.
@@ -357,87 +311,69 @@ func _absolute_trace( res_path:String ) -> String:
 
 ## TR_Case script path when the owner has one. Otherwise the owner's own script.
 func _script_path() -> String:
-	if _test == null:
+	if session == null or not session.case_path.ends_with( ".gd" ):
 		return ""
-	var named:Variant = _test.get(&'path')
-	if named is String:
-		var path:String = named
-		if path.ends_with(".gd"):
-			return path
-	var scr:Script = _test.get_script()
-	if scr == null:
-		return ""
-	return scr.resource_path
+	return session.case_path
 
 
 func _budget_s() -> float:
-	if _test == null:
+	if session == null:
 		return 1.0
-	var found:Variant = _test.get(&'harness_time_s')
-	if found == null:
-		found = _test.get(&'budget_s')
-	if found is float:
-		var number:float = found
-		return maxf(number, 0.0)
-	if found is int:
-		var counted:int = found
-		return maxf(float(counted), 0.0)
-	return 1.0
+	return maxf( session.budget_s, 0.0 )
 
 
-func _seconds( key:StringName ) -> float:
-	if _test == null:
-		return -1.0
-	var found:Variant = _test.get(key)
-	if found is float:
-		var number:float = found
-		return number
-	if found is int:
-		var counted:int = found
-		return float(counted)
-	return -1.0
+#endregion Session
 
+#region Connect - Timer and the Tracy server handshake.
+#MARK: Connect
+func                        __Connect________________              ()->void:pass
+# │  ___                      _
+# │ / __|___ _ _  _ _  ___ __| |_
+# │| (__/ _ \ ' \| ' \/ -_) _|  _|
+# │ \___\___/_||_|_||_\___\__|\__|
+# ╰────────────────────────────────
 
-func _msec( key:StringName ) -> int:
-	if _test == null:
-		return 0
-	var found:Variant = _test.get(key)
-	if found is int:
-		var counted:int = found
-		return counted
-	return 0
+func _drop_timer() -> void:
+	if _timer == null:
+		return
 
+	if is_instance_valid( _timer ):
+		_timer.queue_free()
 
-#       ██ ███    ██ ████████ ███████ ██████  ███    ██  █████  ██             #
-#       ██ ████   ██    ██    ██      ██   ██ ████   ██ ██   ██ ██             #
-#       ██ ██ ██  ██    ██    █████   ██████  ██ ██  ██ ███████ ██             #
-#       ██ ██  ██ ██    ██    ██      ██   ██ ██  ██ ██ ██   ██ ██             #
-#       ██ ██   ████    ██    ███████ ██   ██ ██   ████ ██   ██ ███████        #
-func                        ________INTERNAL_________              ()->void:pass
+	_timer = null
+
 
 func _ensure_timer( scene_tree:SceneTree ) -> void:
-	# Find or create the connect timer.
-	var old_timer:Node = scene_tree.root.find_child("TracyCaptureTimer", false)
-	if old_timer:
-		_log_wrn( "Timer was not removed in last run.")
-		old_timer.queue_free()
-
+	_drop_timer()
 	_timer = Timer.new()
 	_timer.one_shot = true
 	_timer.name = "TracyCaptureTimer"
-	scene_tree.root.add_child(_timer)
+	scene_tree.root.add_child( _timer )
+
+
+## Apply the selected categories and features, then enable the profiler.
+## The profiler stays a singleton call.
+func _arm_recording() -> void:
+	if not _arm_profiler or _profiler == null:
+		return
+
+	var opts:TracyOpts = _opts()
+	if opts == null:
+		return
+
+	_apply_mask( TracyOpts.CATEGORY_NAMES, opts.categories, _saved_categories, &"is_category_enabled", &"set_category_enabled" )
+	_apply_mask( TracyOpts.FEATURE_NAMES, opts.features, _saved_features, &"is_feature_enabled", &"set_feature_enabled" )
+	_profiler.call( &'set_enabled', true )
 
 
 ## [signal Profiler.server_connected]. The capture process is that server.
 func _on_server_connected() -> void:
 	# Same mark as the handshake. Unsilence applies in this flush, then the cases run.
 	_capture_connected = true
-	if _arm_profiler \
-	and _profiler != null:
-		_enable_categories()
-		_enable_features()
-		_profiler.call(&'set_enabled', true)
+	_arm_recording()
+	if _arm_profiler and _profiler != null:
 		_capture_started_frame = _scene_tree().get_frame()
+
 	_timer.paused = true
 	_timer.timeout.emit()
 
@@ -470,6 +406,17 @@ func _on_server_disconnected() -> void:
 	if _procedure_end_msec > 0:
 		_report_gap()
 
+
+#endregion Connect
+
+#region Gap - Disconnect against the procedure.
+#MARK: Gap
+func                        __Gap____________________              ()->void:pass
+# │  ___
+# │ / __|__ _ _ __
+# │| (_ / _` | '_ \
+# │ \___\__,_| .__/
+# ╰──────────|_|────
 
 ## Record the procedure end. A server that has already left is stamped from the handshake.
 func _mark_procedure_end() -> void:
@@ -516,20 +463,21 @@ func _report_early( where:String, early_ms:int ) -> void:
 	var early_s:float = early_ms / 1000.0
 	var suggestion:String = _early_suggestion()
 	if suggestion.is_empty():
-		_log_wrn("Tracy server disconnected %.3fs before the test finished: %s" % [early_s, where])
+		session.log( Log.Level.WARNING, "Tracy server disconnected %.3fs before the test finished: %s" % [early_s, where])
 		return
-	_log_wrn("Tracy server disconnected %.3fs before the test finished: %s. %s" % [early_s, where, suggestion])
+	session.log( Log.Level.WARNING, "Tracy server disconnected %.3fs before the test finished: %s. %s" % [early_s, where, suggestion])
 
 
-## The capture stayed open after the procedure. One second of slack is allowed.
+## The capture stayed open after the procedure. Slack within [member TracyOpts.late_allowance_s] is allowed.
 func _report_late( where:String, slack_ms:int ) -> void:
-	if slack_ms <= 0 or _test == null or _window_sec <= 0 or _capture_started_msec <= 0:
+	if slack_ms <= 0 or _owner() == null or _window_sec <= 0 or _capture_started_msec <= 0:
 		return
 	var slack_s:float = slack_ms / 1000.0
-	if slack_s <= _LATE_ALLOWANCE_S:
+	var allowance:float = _late_allowance_s()
+	if slack_s <= allowance:
 		return
 	var used_s:float = (_procedure_end_msec - _capture_started_msec) / 1000.0
-	var needed:int = maxi(1, ceili(used_s + _LATE_ALLOWANCE_S))
+	var needed:int = maxi( 1, ceili( used_s + allowance ) )
 	if needed >= _window_sec:
 		return
 	var pad:float = _pad_s()
@@ -538,14 +486,14 @@ func _report_late( where:String, slack_ms:int ) -> void:
 		return
 	if suggested >= _budget_s() - 0.0005:
 		return
-	_log_wrn("Tracy capture stayed open %.3fs after the test finished: %s. Lower %s from %.3f to %.3f." % [
+	session.log( Log.Level.WARNING, "Tracy capture stayed open %.3fs after the test finished: %s. Lower %s from %.3f to %.3f." % [
 		slack_s, where, _budget_label(), _budget_s(), suggested,
 	])
 
 
 ## Raise the budget far enough that [code]-s[/code] still covers the procedure.
 func _early_suggestion() -> String:
-	if _test == null or _window_sec <= 0 or _capture_started_msec <= 0:
+	if _owner() == null or _window_sec <= 0 or _capture_started_msec <= 0:
 		return ""
 	var used_s:float = (_procedure_end_msec - _capture_started_msec) / 1000.0
 	var needed:int = maxi(_window_sec + 1, ceili(used_s))
@@ -555,16 +503,15 @@ func _early_suggestion() -> String:
 
 ## Setup, the body, and cleanup, or the span from the harness mark when a phase did not finish.
 func _observed_procedure_s() -> float:
-	if _test == null:
+	if session == null:
 		return 0.0
-	var setup_s:float = _seconds(&'setup_s')
-	var run_s:float = _seconds(&'run_s')
-	var cleanup_s:float = _seconds(&'cleanup_s')
-	if setup_s >= 0.0 and run_s >= 0.0 and cleanup_s >= 0.0:
-		return setup_s + run_s + cleanup_s
-	var mark:int = _msec(&'harness_mark_msec')
-	if mark > 0 and _procedure_end_msec > mark:
-		return (_procedure_end_msec - mark) / 1000.0
+
+	if session.setup_s >= 0.0 and session.run_s >= 0.0 and session.cleanup_s >= 0.0:
+		return session.setup_s + session.run_s + session.cleanup_s
+
+	if session.harness_mark_msec > 0 and _procedure_end_msec > session.harness_mark_msec:
+		return ( _procedure_end_msec - session.harness_mark_msec ) / 1000.0
+
 	return 0.0
 
 
@@ -583,12 +530,21 @@ func _window_for( harness:float, pad:float ) -> int:
 	return maxi(1, ceili(harness + pad))
 
 
-## [member TR_Base.harness_time_s] or [member TR_CaseSession.budget_s].
+## [member TR_CaseSession.budget_s].
 func _budget_label() -> String:
-	if _test != null and _test.get(&'harness_time_s') != null:
-		return "harness_time_s"
 	return "budget_s"
 
+
+#endregion Gap
+
+#region Tools - Capture executable, Python, and the crop scripts.
+#MARK: Tools
+func                        __Tools__________________              ()->void:pass
+# │ _____         _
+# │|_   _|__  ___| |___
+# │  | |/ _ \/ _ \ (_-<
+# │  |_|\___/\___/_/__/
+# ╰─────────────────────
 
 ## Capture executable, Python, and both crop scripts all resolve to files.
 static func is_configured() -> bool:
@@ -597,84 +553,117 @@ static func is_configured() -> bool:
 		and not _tracy_script_dir().is_empty()
 
 
-## First existing [code]tracy-capture[/code], or [code]TRACY_CAPTURE[/code] when that file exists.
+## Saved file, or [code]TRACY_CAPTURE[/code] when the saved path is empty.
 static func _capture_exe() -> String:
-	# A saved path is the one the dock was given. It does not fall through to the guess.
-	var configured:String = _opts().tracy_capture
+	var opts:TracyOpts = _opts()
+	var configured:String = ""
+	if opts != null:
+		configured = opts.capture_exe
+
+	return _saved_or_env( configured, "TRACY_CAPTURE", false )
+
+
+## Saved [code]python.exe[/code], or [code]TRACY_PYTHON[/code] when the saved path is empty.
+static func _python_exe() -> String:
+	# [method OS.execute] starts the path itself. A bare [code]python[/code] on [code]PATH[/code] is not enough.
+	var opts:TracyOpts = _opts()
+	var configured:String = ""
+	if opts != null:
+		configured = opts.python_exe
+
+	return _saved_or_env( configured, "TRACY_PYTHON", false )
+
+
+## Folder of both crop scripts, or [code]TRACY_SCRIPTS[/code] when the saved path is empty.
+static func _tracy_script_dir() -> String:
+	var opts:TracyOpts = _opts()
+	var configured:String = ""
+	if opts != null:
+		configured = opts.capture_scripts
+
+	return _saved_or_env( configured, "TRACY_SCRIPTS", true )
+
+
+## A non-empty [param configured] path does not fall through to [param env_name].
+static func _saved_or_env( configured:String, env_name:String, directory:bool ) -> String:
 	if not configured.is_empty():
-		if FileAccess.file_exists(configured):
+		if _path_ok( configured, directory ):
 			return configured
+
 		return ""
-	var from_env:String = OS.get_environment("TRACY_CAPTURE")
-	if not from_env.is_empty() and FileAccess.file_exists(from_env):
+
+	var from_env:String = OS.get_environment( env_name )
+	if _path_ok( from_env, directory ):
 		return from_env
-	for candidate:String in _CAPTURE_EXES:
-		if FileAccess.file_exists(candidate):
-			return candidate
+
 	return ""
 
 
-## Remember each category, then turn them all on. The mask applies to the next zones.
-func _enable_categories() -> void:
-	# A second handshake must not snapshot the mask this capture already widened.
-	if _profiler == null or not _saved_categories.is_empty():
+static func _path_ok( path:String, directory:bool ) -> bool:
+	if path.is_empty():
+		return false
+
+	if directory:
+		return _tracy_scripts_present( path )
+
+	return FileAccess.file_exists( path )
+
+
+#endregion Tools
+
+#region Profiler - Category and feature masks.
+#MARK: Profiler
+func                        __Profiler_______________              ()->void:pass
+# │ ___          __ _ _
+# │| _ \_ _ ___ / _(_) |___ _ _
+# │|  _/ '_/ _ \  _| | / -_) '_|
+# │|_| |_| \___/_| |_|_\___|_|
+# ╰──────────────────────────────
+
+## Snapshot [param names], then write each bit of [param mask]. A second call keeps the first snapshot.
+func _apply_mask( names:PackedStringArray, mask:int, saved:Dictionary, read_name:StringName, write_name:StringName ) -> void:
+	if _profiler == null or not saved.is_empty():
 		return
-	for name:String in _CATEGORIES:
-		var on_v:Variant = _profiler.call(&'is_category_enabled', name)
+
+	for index:int in names.size():
+		var entry:String = names[ index ]
+		var on_v:Variant = _profiler.call( read_name, entry )
 		var was_on:bool = on_v if on_v is bool else false
-		_saved_categories[name] = was_on
-		_profiler.call(&'set_category_enabled', name, true)
+		saved[ entry ] = was_on
+		var want:bool = ( mask & ( 1 << index ) ) != 0
+		_profiler.call( write_name, entry, want )
 
 
-## Put the categories back. Call this after the silenced mark.
-func _restore_categories() -> void:
-	# A failed setup never changed them.
+## Write [param saved] back, then clear it.
+func _restore_mask( saved:Dictionary, write_name:StringName ) -> void:
 	if _profiler == null:
-		_saved_categories = {}
+		saved.clear()
 		return
-	for name:String in _saved_categories:
-		var saved:Variant = _saved_categories[name]
-		var was_on:bool = saved if saved is bool else false
-		_profiler.call(&'set_category_enabled', name, was_on)
-	_saved_categories = {}
+
+	for entry:String in saved:
+		var stored:Variant = saved[entry]
+		var was_on:bool = stored if stored is bool else false
+		_profiler.call( write_name, entry, was_on )
+
+	saved.clear()
 
 
-## Remember each feature, then turn them all on. A silenced profiler keeps this until recording is enabled.
-func _enable_features() -> void:
-	# A second handshake must not snapshot the mask this capture already widened.
-	if _profiler == null or not _saved_features.is_empty():
-		return
-	for name:String in _FEATURES:
-		var on_v:Variant = _profiler.call(&'is_feature_enabled', name)
-		var was_on:bool = on_v if on_v is bool else false
-		_saved_features[name] = was_on
-		_profiler.call(&'set_feature_enabled', name, true)
-
-
-## Put the features back. Call this while the profiler is still silenced.
-func _restore_features() -> void:
-	# A failed setup never changed them.
-	if _profiler == null:
-		_saved_features = {}
-		return
-	for name:String in _saved_features:
-		var saved:Variant = _saved_features[name]
-		var was_on:bool = saved if saved is bool else false
-		_profiler.call(&'set_feature_enabled', name, was_on)
-	_saved_features = {}
+func _restore_masks() -> void:
+	_restore_mask( _saved_categories, &"set_category_enabled" )
+	_restore_mask( _saved_features, &"set_feature_enabled" )
 
 
 ## Put the profiler back and drop the connection listeners.
 func _restore_profiler() -> void:
-	# [method pre] silenced the engine. Put the previous enabled state back.
+	# [method _pre] silenced the engine. Put the previous enabled state back.
+	_drop_timer()
 	_drop_server_disconnected()
 	_arm_profiler = false
 	if _profiler != null:
 		var connected_sig:Signal = Signal(_profiler, &'server_connected')
 		if connected_sig.is_connected(_on_server_connected):
 			connected_sig.disconnect(_on_server_connected)
-		_restore_categories()
-		_restore_features()
+		_restore_masks()
 		_profiler.call(&'set_enabled', _profiler_was_enabled)
 	_profiler = null
 
@@ -686,25 +675,136 @@ func _stop_capture() -> void:
 	and OS.is_process_running(_capture_pid):
 		var killed:Error = OS.kill(_capture_pid)
 		if killed != OK:
-			_log_err("tracy-capture did not die")
+			session.log( Log.Level.ERROR, "tracy-capture did not die")
 	_capture_pid = -1
 	_restore_profiler()
 
+
+#endregion Profiler
+
+#region Window - Declared window and the measured pad.
+#MARK: Window
+func                        __Window_________________              ()->void:pass
+# │__      ___         _
+# │\ \    / (_)_ _  __| |_____ __ __
+# │ \ \/\/ /| | ' \/ _` / _ \ V  V /
+# │  \_/\_/ |_|_||_\__,_\___/\_/\_/
+# ╰──────────────────────────────────
+
+## [code]-s[/code] is the declared harness time plus the stored pad, in whole seconds.
+func _capture_window_sec() -> int:
+	return maxi(1, ceili(_budget_s() + _pad_s()))
+
+
+static func _connect_wait_s() -> float:
+	var opts:TracyOpts = _opts()
+	if opts == null:
+		return 3.0
+	return maxf( opts.connect_wait_s, 0.0 )
+
+
+
+static func _capture_timeout_s() -> float:
+	var opts:TracyOpts = _opts()
+	if opts == null:
+		return 3.0
+	return maxf( opts.capture_timeout_s, 0.0 )
+
+
+static func _late_allowance_s() -> float:
+	var opts:TracyOpts = _opts()
+	if opts == null:
+		return 1.0
+	return maxf( opts.late_allowance_s, 0.0 )
+
+
+
+## Stored pad. One second until a measured run replaces it.
+static func _pad_s() -> float:
+	var opts:TracyOpts = _opts()
+	if opts == null:
+		return 0.0
+	return maxf( opts.pad_s, 0.0 )
+
+
+static func _pad_samples() -> int:
+	var opts:TracyOpts = _opts()
+	if opts == null:
+		return 0
+	return maxi( opts.pad_samples, 0 )
+
+
+## Fold one measured pad into the setting. The mean keeps the last 32 samples.
+static func _store_pad(sample:float) -> void:
+	var n:int = _pad_samples()
+	var avg:float = _pad_s()
+	var next:float = maxf(sample, 0.0)
+	var next_n:int = 1
+	if n > 0:
+		var weight:int = mini(n, 31)
+		next = (avg * float(weight) + sample) / float(weight + 1)
+		next_n = mini(n + 1, 32)
+	var opts:TracyOpts = _opts()
+	if opts == null:
+		return
+	opts.pad_s = next
+	opts.pad_samples = next_n
+
+
+func _remember_pad() -> void:
+	if session == null \
+	or _capture_launched_msec <= 0 \
+	or _capture_ended_msec <= 0:
+		return
+	var setup_s:float = session.setup_s
+	var run_s:float = session.run_s
+	var cleanup_s:float = session.cleanup_s
+	if setup_s < 0.0 \
+	or run_s < 0.0 \
+	or cleanup_s < 0.0:
+		session.log( Log.Level.NOTICE, "capture ended with phases incomplete")
+		session.log( Log.Level.DEBUG, "capture start=%d end=%d" % [
+			_capture_launched_msec, _capture_ended_msec,
+		] )
+	var wall:float = (_capture_ended_msec - _capture_launched_msec) / 1000.0
+	var harness:float = setup_s + run_s + cleanup_s
+	# Time from launch until setup. Folding wall-minus-harness would grow every run,
+	# because [code]-s[/code] holds the process open for the whole window.
+	var sample:float = 0.0
+	var mark:int = session.harness_mark_msec
+	if mark > _capture_launched_msec:
+		sample = (mark - _capture_launched_msec) / 1000.0
+	session.log( Log.Level.NOTICE, "capture wall=%.3f harness=%.3f pad=%.3f start=%d end=%d" % [
+		wall, harness, sample, _capture_launched_msec, _capture_ended_msec,
+	])
+	_store_pad(sample)
+
+
+#endregion Window
+
+#region Crop - Trim the tail and shift the start.
+#MARK: Crop
+func                        __Crop___________________              ()->void:pass
+# │  ___
+# │ / __|_ _ ___ _ __
+# │| (__| '_/ _ \ '_ \
+# │ \___|_| \___/ .__/
+# ╰─────────────|_|────
 
 ## Trim the saved tail, then drop the startup frames. The file at [member _trace_path] is the result.
 func _crop_trace() -> Error:
 	# Both scripts refuse an output path equal to the input, so the crop lands in temps first.
 	if _trace_path.is_empty() or not FileAccess.file_exists(_trace_path):
-		_log_err("tracy capture was not saved")
+		session.log( Log.Level.ERROR, "tracy capture was not saved")
 		return ERR_FILE_NOT_FOUND
 	var python:String = _python_exe()
 	if python.is_empty():
 		# Trimming is optional. The raw capture is still a successful result.
-		_log_wrn("python was not found. Raw capture left at " + _trace_path)
+		session.log( Log.Level.WARNING, "python was not found. Raw capture left at " + _trace_path)
 		return OK
 	var scripts:String = _tracy_script_dir()
 	if scripts.is_empty():
-		_log_wrn("tracy python scripts were not found. Set TRACY_SCRIPTS to that folder.")
+		session.log( Log.Level.WARNING, "tracy python scripts were not found. Set TRACY_SCRIPTS to that folder.")
 		return ERR_FILE_NOT_FOUND
 
 	var trimmed:String = _trace_path + ".tail"
@@ -732,100 +832,6 @@ func _crop_trace() -> Error:
 	return OK
 
 
-## Saved [code]python.exe[/code], or [code]TRACY_PYTHON[/code] when that file exists.
-static func _python_exe() -> String:
-	# [method OS.execute] starts the path itself. A bare [code]python[/code] on [code]PATH[/code] is not enough.
-	# A saved path is the one the dock was given. It does not fall through to the guess.
-	var configured:String = _opts().python_exe
-	if not configured.is_empty():
-		if FileAccess.file_exists(configured):
-			return configured
-		return ""
-	var from_env:String = OS.get_environment("TRACY_PYTHON")
-	if not from_env.is_empty() and FileAccess.file_exists(from_env):
-		return from_env
-	for candidate:String in _PYTHON_EXES:
-		if FileAccess.file_exists(candidate):
-			return candidate
-	return ""
-
-
-## [code]-s[/code] is the declared harness time plus the stored pad, in whole seconds.
-func _capture_window_sec() -> int:
-	return maxi(1, ceili(_budget_s() + _pad_s()))
-
-
-## Stored pad. One second until a measured run replaces it.
-static func _pad_s() -> float:
-	return maxf(_opts().tracy_pad_s, 0.0)
-
-
-static func _pad_samples() -> int:
-	return maxi(_opts().tracy_pad_samples, 0)
-
-
-## Fold one measured pad into the setting. The mean keeps the last 32 samples.
-static func _store_pad(sample:float) -> void:
-	var n:int = _pad_samples()
-	var avg:float = _pad_s()
-	var next:float = maxf(sample, 0.0)
-	var next_n:int = 1
-	if n > 0:
-		var weight:int = mini(n, 31)
-		next = (avg * float(weight) + sample) / float(weight + 1)
-		next_n = mini(n + 1, 32)
-	var opts := _opts()
-	opts.tracy_pad_s = next
-	opts.tracy_pad_samples = next_n
-
-
-func _remember_pad() -> void:
-	if _test == null \
-	or _capture_launched_msec <= 0 \
-	or _capture_ended_msec <= 0:
-		return
-	var setup_s:float = _seconds(&'setup_s')
-	var run_s:float = _seconds(&'run_s')
-	var cleanup_s:float = _seconds(&'cleanup_s')
-	if setup_s < 0.0 \
-	or run_s < 0.0 \
-	or cleanup_s < 0.0:
-		_log_note("capture ended with phases incomplete")
-		Log.lvl(Log.Level.DEBUG, "capture start=%d end=%d" % [
-			_capture_launched_msec, _capture_ended_msec,
-		], _test)
-		return
-	var wall:float = (_capture_ended_msec - _capture_launched_msec) / 1000.0
-	var harness:float = setup_s + run_s + cleanup_s
-	# Time from launch until setup. Folding wall-minus-harness would grow every run,
-	# because [code]-s[/code] holds the process open for the whole window.
-	var sample:float = 0.0
-	var mark:int = _msec(&'harness_mark_msec')
-	if mark > _capture_launched_msec:
-		sample = (mark - _capture_launched_msec) / 1000.0
-	_log_note("capture wall=%.3f harness=%.3f pad=%.3f start=%d end=%d" % [
-		wall, harness, sample, _capture_launched_msec, _capture_ended_msec,
-	])
-	_store_pad(sample)
-
-
-## Folder that holds both crop scripts, or [code]TRACY_SCRIPTS[/code] when that folder has them.
-static func _tracy_script_dir() -> String:
-	# trim_tracy_tail.py imports shift_tracy_start from this same folder.
-	var configured:String = _opts().tracy_scripts
-	if not configured.is_empty():
-		if _tracy_scripts_present(configured):
-			return configured
-		return ""
-	var from_env:String = OS.get_environment("TRACY_SCRIPTS")
-	if _tracy_scripts_present(from_env):
-		return from_env
-	for candidate:String in _TRACY_SCRIPT_DIRS:
-		if _tracy_scripts_present(candidate):
-			return candidate
-	return ""
-
-
 ## Both crop scripts are in [param folder].
 static func _tracy_scripts_present(folder:String) -> bool:
 	# An env override that names the wrong folder must miss, same as a missing install.
@@ -841,17 +847,17 @@ func _run_tracy_script(python:String, script:String, args:PackedStringArray) -> 
 	var captured:Array = []
 	var command:PackedStringArray = PackedStringArray([script])
 	command.append_array(args)
-	var code:int = OS.execute(python, command, captured, true)
+	var exit_code:int = OS.execute(python, command, captured, true)
 	var text:String = ""
 	for chunk:Variant in captured:
 		if chunk is String:
 			text += chunk
 	text = text.strip_edges()
-	if code != 0:
-		_log_wrn("tracy script failed (" + str(code) + ") " + script.get_file() + "\n" + _crop_note(text))
+	if exit_code != 0:
+		session.log( Log.Level.WARNING, "tracy script failed (" + str(exit_code) + ") " + script.get_file() + "\n" + _crop_note(text))
 		return ERR_SCRIPT_FAILED
 	if not text.is_empty():
-		_log_note(_crop_note(text))
+		session.log( Log.Level.NOTICE, _crop_note(text))
 	return OK
 
 
@@ -887,25 +893,25 @@ func _install_cropped(tight:String) -> Error:
 	if FileAccess.file_exists(parked):
 		var cleared:Error = DirAccess.remove_absolute(parked)
 		if cleared != OK:
-			_log_wrn("could not clear " + parked)
+			session.log( Log.Level.WARNING, "could not clear " + parked)
 			return cleared
 	var moved:Error = DirAccess.rename_absolute(_trace_path, parked)
 	if moved != OK:
-		_log_wrn("could not park the raw capture")
+		session.log( Log.Level.WARNING, "could not park the raw capture")
 		return moved
 
 	var placed:Error = DirAccess.rename_absolute(tight, _trace_path)
 	if placed != OK:
 		var back:Error = DirAccess.rename_absolute(parked, _trace_path)
 		if back != OK:
-			_log_wrn("cropped trace is at " + tight + " and the raw capture is at " + parked)
+			session.log( Log.Level.WARNING, "cropped trace is at " + tight + " and the raw capture is at " + parked)
 		else:
-			_log_wrn("could not install the cropped capture")
+			session.log( Log.Level.WARNING, "could not install the cropped capture")
 		return placed
 
 	var dropped:Error = DirAccess.remove_absolute(parked)
 	if dropped != OK:
-		_log_wrn("cropped capture is in place. raw copy remains at " + parked)
+		session.log( Log.Level.WARNING, "cropped capture is in place. raw copy remains at " + parked)
 	return OK
 
 
@@ -916,4 +922,6 @@ func _drop_file(path:String) -> void:
 		return
 	var removed:Error = DirAccess.remove_absolute(path)
 	if removed != OK:
-		_log_wrn("could not remove " + path)
+		session.log( Log.Level.WARNING, "could not remove " + path)
+
+#endregion Crop

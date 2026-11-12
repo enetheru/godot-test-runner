@@ -322,6 +322,54 @@ static func get_stack_popped( n:int = 0 ) -> Array:
 	return stack
 
 
+## Hex and text rows for [param bytes]. [param cols] is the row width.
+static func format_bytes( bytes:PackedByteArray, cols:int = 8 ) -> String:
+	if bytes.is_empty():
+		return "Empty"
+
+	var lines:PackedStringArray = PackedStringArray()
+	if lines.append( "size: %d" % bytes.size() ):
+		push_error( "sbytes: append failed" )
+		return ""
+
+	var position:int = 0
+	while true:
+		var slice:PackedByteArray = bytes.slice( position, position + cols )
+		if slice.is_empty():
+			break
+
+		var line:String = "%08X: " % position
+		for byte:int in slice:
+			line += "%02X " % byte
+
+		line = line.rpad( 10 + cols * 3, " " )
+		for byte:int in slice:
+			line += char( byte ) if byte > 32 else "."
+
+		if lines.append( line ):
+			push_error( "sbytes: append failed" )
+			break
+
+		position += cols
+		if slice.size() < cols:
+			break
+
+	return "\n".join( lines )
+
+
+## Bbcode link to the frame [param depth] steps above this call.
+## [code]1[/code] is the caller. [method link] draws the line.
+static func call_site( depth:int = 1 ) -> String:
+	var stack:Array = get_stack_popped( depth )
+	if stack.is_empty():
+		return ""
+
+	var frame:Dictionary = stack[ 0 ]
+	var place:String = "{source}:{line}".format( frame )
+	var fn:String = str( frame.get( &"function", "" ) )
+	return link( place, "%s:%s()" % [ place, fn ] )
+
+
 ## Call-site trace. [param object] is the identity (usually [code]self[/code]).
 ## [param stack] is passed through and not filled here.
 static func trace( args:Dictionary = {}, object:Object = null, stack:Array = [] ) -> void:

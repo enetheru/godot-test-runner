@@ -11,12 +11,10 @@ extends Node
 
 const TestScan = preload( "uid://dk7mscanwalk1" )
 const Log = preload( "uid://br7jtx5cntuan" )
-const TR_Opts = preload( "uid://c3rwpcm55iy6r" )
 const _BATCH_UID := "uid://bsx0nrerfipri"
 
 const LAST_JSON_PATH:String = "user://test_runner_last.json"
 const RESULTS_DIR:String = "user://test_runner_results"
-const DEFAULT_TEST_PATH:String = TR_Opts.DEFAULT_TESTS_DIR
 const DEFAULT_CASE_PATH:String = TR_Opts.DEFAULT_CASES_DIR
 
 
@@ -29,9 +27,6 @@ func                        ________PROPERTIES_______              ()->void:pass
 
 # Defaults. A caller can replace the paths and the ceiling before a run.
 
-## Folder of TR_Base scripts.
-var test_path:String = DEFAULT_TEST_PATH
-
 ## Folders of TR_Case scripts.
 var case_paths:PackedStringArray = PackedStringArray([DEFAULT_CASE_PATH])
 
@@ -41,8 +36,7 @@ var max_scan_depth:int = TestScan.DEFAULT_MAX_SCAN_DEPTH
 ## Inclusive [constant Log.Level] copied onto each instance as [code]local_lvl[/code].
 var lvl:int = Log.Level.DEFAULT
 
-# Discovery filters. The defaults keep [code]test*.gd[/code] and every folder.
-var _script_filter:Callable = default_script_filter
+# Discovery filter. Accepts every folder. Children may hold the scripts.
 var _folder_filter:Callable = default_folder_filter
 
 # [method reload] fills this.
@@ -83,14 +77,10 @@ signal batch_finished( results:Dictionary )
 #         ██      ██ ███████    ██    ██   ██  ██████  ██████  ███████         #
 func                        _________METHODS_________              ()->void:pass
 
-func default_script_filter( filename:String ) -> bool:
-	return filename.begins_with( "test" ) \
-		and filename.ends_with( ".gd" ) \
-		and not filename.ends_with( "_generated.gd" )
-
 func default_folder_filter( _folder_path:String ) -> bool:
 	# Do not require scripts in this folder — children may hold them.
 	return true
+
 
 ## Inclusive ceiling for the next run. Notice is quiet.
 func set_lvl( level:int ) -> void:
@@ -99,13 +89,14 @@ func set_lvl( level:int ) -> void:
 	lvl = level
 	flags_changed.emit()
 
-## Rescan [member test_path] and [member case_paths], then refresh [member groups].
+
+## Rescan case folders and hook folders, then refresh [member groups].
 func reload() -> void:
-	test_path = TR_Opts.tests_root()
 	case_paths = TR_Opts.cases_roots()
-	groups = collect_groups( test_path )
-	groups.append_array( _case_groups() )
+	groups = _case_groups()
+	TR_Opts.scan_hooks()
 	tests_reloaded.emit()
+
 
 ## Clear last batch results (in-memory). Does not delete log files.
 func clear_results() -> void:
@@ -113,19 +104,10 @@ func clear_results() -> void:
 	last_log_path = ""
 	results_cleared.emit()
 
+
 func list_tests() -> Array:
 	_ensure_roots()
 	return groups.duplicate( true )
-
-
-## Collect group dictionaries without touching Tree/UI.
-## Nested folders become [code]Group/Sub[/code] names. [code]group:Parent[/code]
-## matches that node and every descendant.
-func collect_groups( path:String = "" ) -> Array:
-	var root:String = path if not path.is_empty() else test_path
-	var tree:Array[Dictionary] = TestScan.collect_test_tree(
-			root, max_scan_depth, _script_filter, _folder_filter )
-	return _groups_from_tree( tree, "" )
 
 
 ## Resolve a run target into script paths.
@@ -204,6 +186,7 @@ func get_last_results() -> Dictionary:
 		return last_results.duplicate( true )
 	return _load_last_json()
 
+
 ## Start a batch. Completes via [param on_done](results:Dictionary).
 ## [param opts.parallel]: if true, launch all suites like the TestRunner UI
 ## (no await between starts); otherwise sequential.
@@ -270,9 +253,9 @@ func format_list_text() -> String:
 	var list:Array = list_tests()
 	var cases:String = ", ".join( case_paths )
 	if list.is_empty():
-		return "OK: no groups under %s or %s" % [test_path, cases]
+		return "OK: no groups under %s" % cases
 	var lines:Array = []
-	lines.append( "OK: tests under %s, cases under %s" % [test_path, cases] )
+	lines.append( "OK: cases under %s" % cases )
 	for g:Variant in list:
 		var gd:Dictionary = g
 		var scripts:Array = gd.get( "scripts", [] )
@@ -285,6 +268,7 @@ func format_list_text() -> String:
 			var sd:Dictionary = s
 			lines.append( "    - %s" % str( sd.get( "file", "" ) ) )
 	return "\n".join( lines )
+
 
 ## One line per suite + recap. Used by TCP/MCP and log files.
 func format_summary_table( results:Dictionary, bbcode:bool = true ) -> String:
@@ -331,6 +315,7 @@ func format_summary_table( results:Dictionary, bbcode:bool = true ) -> String:
 			else:
 				_n = lines.append( "  FAIL  %s" % path )
 	return "\n".join( lines )
+
 
 ## Serialize results for TCP/MCP: OK line + BBCode body.
 ## Multi-suite runs print a compact table first. Per-suite logs follow only
@@ -409,12 +394,13 @@ func _runner() -> Node:
 	add_child( created )
 	return created
 
+
 ## Rescan when the configured folders changed, or when nothing is cached yet.
 func _ensure_roots() -> void:
 	if groups.is_empty() \
-	or test_path != TR_Opts.tests_root() \
 	or case_paths != TR_Opts.cases_roots():
 		reload()
+
 
 func _groups_from_tree( nodes:Array, prefix:String ) -> Array:
 	var out:Array = []
@@ -442,6 +428,7 @@ func _groups_from_tree( nodes:Array, prefix:String ) -> Array:
 		if not kids.is_empty():
 			out.append_array( _groups_from_tree( kids, gname ) )
 	return out
+
 
 ## TR_Case groups under [member case_paths]. Names start with [code]Cases[/code].
 func _case_groups() -> Array:
@@ -483,6 +470,7 @@ func _case_groups_under( root:String, label:String ) -> Array:
 		out.append( gd )
 	return out
 
+
 func _script_rows( folder:String, files:Array ) -> Array:
 	var scripts:Array = []
 	for f:Variant in files:
@@ -493,8 +481,10 @@ func _script_rows( folder:String, files:Array ) -> Array:
 		} )
 	return scripts
 
+
 func _gd_file_filter( filename:String ) -> bool:
 	return filename.ends_with( ".gd" )
+
 
 func _group_spec_matches( gd:Dictionary, spec:String ) -> bool:
 	var want:String = spec.to_lower()
@@ -506,11 +496,13 @@ func _group_spec_matches( gd:Dictionary, spec:String ) -> bool:
 	return folder.get_file().to_lower() == want \
 	or folder.get_file().to_pascal_case().to_lower() == want
 
+
 func _result_lvl( results:Dictionary ) -> int:
 	var got:Variant = results.get( "lvl", Log.Level.DEFAULT )
 	if got is int:
 		return got
 	return Log.Level.DEFAULT
+
 
 func _format_log( results:Dictionary ) -> String:
 	var lines:Array = []
@@ -541,6 +533,7 @@ func _format_log( results:Dictionary ) -> String:
 			lines.append( str( line ) )
 	return "\n".join( lines )
 
+
 func _write_text( path:String, text:String ) -> void:
 	var f:FileAccess = FileAccess.open( path, FileAccess.WRITE )
 	if f == null:
@@ -552,6 +545,7 @@ func _write_text( path:String, text:String ) -> void:
 	var _ok:bool = f.store_string( text )
 	f.close()
 
+
 func _load_last_json() -> Dictionary:
 	if not FileAccess.file_exists( LAST_JSON_PATH ):
 		return {}
@@ -562,6 +556,7 @@ func _load_last_json() -> Dictionary:
 	if parsed is Dictionary:
 		return parsed
 	return {}
+
 
 ## Color the logger's WARNING label. The stored line stays plain.
 func _color_output_line( line:String ) -> String:

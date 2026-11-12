@@ -31,6 +31,6 @@ When **enetheru.command-server** is enabled, this plugin registers
 Logic lives in `scripts/test_runner_service.gd` (Node on the plugin). The main panel Tree
 stays the UI view; service owns discovery + agent runs + `user://` logs.
 
-Discovery walks `res://tests/**` (not a fixed two-level tree). Nested folders
-show as nested TestElement rows. `group:Parent` runs that folder and descendants.
+Discovery walks each folder in `cases_dirs`. Nested folders show as nested rows.
+`group:Parent` runs that folder and descendants.
 Scan depth defaults to 32 as a junction/symlink cycle guard (`max_scan_depth`).

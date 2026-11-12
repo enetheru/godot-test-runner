@@ -20,12 +20,14 @@ extends RefCounted
 ## BUDGET_S. Absent means no, empty, or five seconds. [code]DESCRIPTION[/code]
 ## is the text the result card header opens.
 ##[br][br]
-## [method _configure] assigns [member TR_CaseSession.budget_s] and
-## [member TR_CaseSession.hooks]. It does not await. A tree host may then
-## install [TracyCapture] when hooks is still empty. [method TR_Hook.pre]
-## runs next, then the clock, then the three calls below.
-## [method TR_Hook.post] runs after those calls, including a timeout.
-## A non-OK post fails a passing run.
+## [method _configure] assigns [member TR_CaseSession.budget_s] and may
+## append to [member TR_CaseSession.hooks]. It does not await. The session
+## loads hook scripts from the options list and from the constants
+## [code]HOOK[/code] and [code]HOOKS[/code] before that call.
+## [method TR_Hook.pre] runs next. The session waits on
+## [signal TR_Hook.settled]. The clock starts after pre, then the three
+## calls below. [method TR_Hook.post] runs after those calls, including a
+## timeout. A non-OK post fails a passing run.
 
 
 # ██████  ██████   ██████  ██████  ███████ ██████  ████████ ██ ███████ ███████ #
@@ -46,7 +48,7 @@ var session: TR_CaseSession
 #              ████   ██ ██   ██    ██     ██████  ██   ██ ███████             #
 func                        _________VIRTUAL_________              ()->void:pass
 
-## Assign [member TR_CaseSession.budget_s] and [member TR_CaseSession.hooks] here. No await.
+## Assign [member TR_CaseSession.budget_s] here. Append to [member TR_CaseSession.hooks] for a hook built in this script. No await.
 func _configure() -> void:
 	pass
 

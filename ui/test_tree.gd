@@ -87,6 +87,9 @@ var _fold_buttons:Array[TextureButton] = []
 # True while every branch is being opened or closed. The stripe runs once at the end.
 var _folding:bool = false
 
+# True while a filter opens rows. That does not count as a fold change.
+var _hold_fold:bool = false
+
 
 #            ███████ ██  ██████  ███    ██  █████  ██      ███████             #
 #            ██      ██ ██       ████   ██ ██   ██ ██      ██                  #
@@ -98,6 +101,9 @@ func                        _________SIGNALS_________              ()->void:pass
 signal run_requested( item:TreeItem, kind_id:int )
 signal context_menu_requested( item:TreeItem, at:Vector2 )
 signal file_picked( item:TreeItem )
+
+## Collapsed row paths, after a fold the user made.
+signal fold_changed( paths:PackedStringArray )
 
 
 #             ███████ ██    ██ ███████ ███    ██ ████████ ███████              #
@@ -141,9 +147,10 @@ func _on_gui_input( event:InputEvent ) -> void:
 
 
 func _on_collapsed( _item:TreeItem ) -> void:
-	if _folding:
+	if _folding or _hold_fold:
 		return
 	_stripe_tree()
+	fold_changed.emit( folded_paths() )
 
 
 func _on_unfold() -> void:
@@ -193,7 +200,9 @@ func apply_filter( pattern:String, kind_ids:Array[int] ) -> void:
 	var root:TreeItem = get_root()
 	if root == null:
 		return
+	_hold_fold = true
 	var _shown:bool = _filter_item( root, _list_glob( pattern ) )
+	_hold_fold = false
 	_stripe_tree()
 
 #region List - Replace the tree and read which files are picked.
@@ -814,12 +823,66 @@ func _fold_all( collapsed:bool ) -> void:
 		_fold_branch( child, collapsed )
 	_folding = false
 	_stripe_tree()
+	fold_changed.emit( folded_paths() )
 
 
 func _fold_branch( item:TreeItem, collapsed:bool ) -> void:
 	item.collapsed = collapsed
 	for child:TreeItem in item.get_children():
 		_fold_branch( child, collapsed )
+
+
+## Collapsed row paths. The root uses its title. Other rows use [method row_path].
+func folded_paths() -> PackedStringArray:
+	var found:Array[String] = []
+	var root:TreeItem = get_root()
+	if root != null:
+		_collect_folded( root, found )
+
+	var out:PackedStringArray = PackedStringArray()
+	for key:String in found:
+		if out.append( key ):
+			push_error( "test_tree.folded_paths: append failed" )
+			break
+	return out
+
+
+## Close the rows named in [param paths]. Every other row opens.
+func apply_folded( paths:PackedStringArray ) -> void:
+	var want:Dictionary = {}
+	for path:String in paths:
+		want[ path ] = true
+
+	_folding = true
+	var root:TreeItem = get_root()
+	if root != null:
+		_apply_folded_item( root, want )
+	_folding = false
+	_stripe_tree()
+
+
+func _fold_key( item:TreeItem ) -> String:
+	if item == null:
+		return ""
+	if item == get_root():
+		return item.get_text( 0 )
+	return row_path( item )
+
+
+func _collect_folded( item:TreeItem, found:Array[String] ) -> void:
+	var key:String = _fold_key( item )
+	if item.collapsed and not key.is_empty():
+		found.append( key )
+	for child:TreeItem in item.get_children():
+		_collect_folded( child, found )
+
+
+func _apply_folded_item( item:TreeItem, want:Dictionary ) -> void:
+	var key:String = _fold_key( item )
+	if not key.is_empty():
+		item.collapsed = want.has( key )
+	for child:TreeItem in item.get_children():
+		_apply_folded_item( child, want )
 
 #endregion Fold
 

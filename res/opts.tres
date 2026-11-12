@@ -1,12 +1,12 @@
-[gd_resource type="Resource" format=3 uid="uid://cj00aakht01yo"]
+[gd_resource type="Resource" script_class="TR_Opts" format=3 uid="uid://cj00aakht01yo"]
 
-[ext_resource type="Script" uid="uid://c3rwpcm55iy6r" path="res://addons/enetheru.test-runner/runner/test_runner_opts.gd" id="1_opts"]
+[ext_resource type="Script" uid="uid://c3rwpcm55iy6r" path="res://addons/enetheru.test-runner/runner/Opts.gd" id="1_opts"]
 
 [resource]
 script = ExtResource("1_opts")
+tree_folded = PackedStringArray("res://cases/scene_tree", "res://cases/server")
+split_offset = 190
 cases_dirs = PackedStringArray("res://cases/")
-python_exe = "C:/Users/nicho/AppData/Local/Programs/Python/Python314/python.exe"
-tracy_capture = "C:/git/wolfpld/tracy/capture/cmake-build-release-visual-studio/tracy-capture.exe"
-tracy_scripts = "C:/Godot/src/godot-private/misc/scripts/tracy"
-tracy_pad_s = 0.0094688667568608
-tracy_pad_samples = 32
+hook_dirs = PackedStringArray("res://addons/enetheru.test-runner/runner/hooks")
+template_debug = "C:/Godot/Projects/Enetheru.test-runner-project/godot.windows.template_debug.x86_64.llvm.tracy.exe"
+template_release = "C:/Godot/Projects/Enetheru.test-runner-project/godot.windows.template_release.x86_64.llvm.tracy.exe"

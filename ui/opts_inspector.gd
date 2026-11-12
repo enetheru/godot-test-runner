@@ -5,8 +5,6 @@ extends EditorInspectorPlugin
 ##
 ## Level lists every ceiling. Tracy and its pad stay disabled until capture is configured.
 
-const TR_Opts = preload( "uid://c3rwpcm55iy6r" )
-
 
 ##[codeblock lang=text]
 ##│ _                _ ___    _ _ _
@@ -71,7 +69,7 @@ class TracyEditor extends EditorProperty:
 
 
 	func _on_toggled( pressed:bool ) -> void:
-		emit_changed( &"tracy", pressed )
+		emit_changed( &"enabled", pressed )
 
 
 	func _init() -> void:
@@ -92,7 +90,7 @@ class TracyEditor extends EditorProperty:
 	func _listen() -> void:
 		if _listening:
 			return
-		var opts:TR_Opts = get_edited_object()
+		var opts:Resource = get_edited_object() as Resource
 		if opts == null:
 			return
 		var err:int = opts.changed.connect( _sync )
@@ -103,11 +101,13 @@ class TracyEditor extends EditorProperty:
 
 
 	func _sync() -> void:
-		var opts:TR_Opts = get_edited_object() as TR_Opts
+		var opts:Object = get_edited_object()
 		if opts == null:
 			return
 		var supported:bool = Engine.has_singleton( &"Profiler" )
 		var capture_ready:bool = supported and _Capture.is_configured()
+		var enabled:Variant = opts.get( &"enabled" )
+		var on:bool = enabled if enabled is bool else false
 		_check.visible = supported
 		_check.disabled = not capture_ready
 		if not supported:
@@ -116,7 +116,7 @@ class TracyEditor extends EditorProperty:
 			return
 		if capture_ready:
 			_check.tooltip_text = _READY_TIP
-			_check.set_pressed_no_signal( opts.tracy )
+			_check.set_pressed_no_signal( on )
 			return
 		_check.tooltip_text = _LOCKED_TIP
 		_check.set_pressed_no_signal( false )
@@ -144,13 +144,13 @@ class PadEditor extends EditorProperty:
 	func _on_value( value:float ) -> void:
 		if _slider.read_only:
 			return
-		emit_changed( &"tracy_pad_s", value, &"", true )
+		emit_changed( &"pad_s", value, &"", true )
 
 
 	func _on_ungrabbed() -> void:
 		if _slider.read_only:
 			return
-		emit_changed( &"tracy_pad_s", _slider.value )
+		emit_changed( &"pad_s", _slider.value )
 
 
 	func _init() -> void:
@@ -178,7 +178,7 @@ class PadEditor extends EditorProperty:
 	func _listen() -> void:
 		if _listening:
 			return
-		var opts:TR_Opts = get_edited_object()
+		var opts:Resource = get_edited_object() as Resource
 		if opts == null:
 			return
 		var err:int = opts.changed.connect( _sync )
@@ -189,13 +189,15 @@ class PadEditor extends EditorProperty:
 
 
 	func _sync() -> void:
-		var opts:TR_Opts = get_edited_object() as TR_Opts
+		var opts:Object = get_edited_object()
 		if opts == null:
 			return
 		var capture_ready:bool = Engine.has_singleton( &"Profiler" ) and _Capture.is_configured()
+		var raw:Variant = opts.get( &"pad_s" )
+		var pad:float = raw if raw is float else 0.0
 		_slider.read_only = not capture_ready
 		_slider.tooltip_text = _READY_TIP if capture_ready else _LOCKED_TIP
-		_slider.set_value_no_signal( opts.tracy_pad_s )
+		_slider.set_value_no_signal( pad )
 
 
 const _READY_TIP:String = "Capture a Tracy trace for each run."
@@ -211,15 +213,37 @@ const _NO_PROFILER_TIP:String = "This editor has no Profiler, so Tracy capture i
 func                        ________OVERRIDES________              ()->void:pass
 
 func _can_handle( object:Object ) -> bool:
-	return object is TR_Opts
+	return object is TR_Opts or _is_tracy_opts( object )
 
 
-func _parse_begin( _object:Object ) -> void:
+func _parse_begin( object:Object ) -> void:
+	if not object is TR_Opts:
+		return
 	var hint := Label.new()
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	hint.text = "This resource is the shared Test Runner options. The dock and the case menu read it."
+	hint.text = "This resource is the shared Test Runner options. The dock and the case menu read it. Hook scripts found in the folders below show their own options here."
 	add_custom_control( hint )
+
+
+func _parse_end( object:Object ) -> void:
+	if not object is TR_Opts:
+		return
+	for path:String in TR_Opts.hook_paths():
+		var title := Label.new()
+		title.text = path.get_file()
+		add_custom_control( title )
+		var cfg:TR_HookOpts = TR_Opts.configuration_for( path )
+		if cfg == null:
+			var missing := Label.new()
+			missing.text = "This hook has no options."
+			add_custom_control( missing )
+			continue
+		var inspector := EditorInspector.new()
+		inspector.custom_minimum_size = Vector2( 0, 180 )
+		inspector.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		inspector.edit( cfg )
+		add_custom_control( inspector )
 
 
 func _parse_property(
@@ -231,13 +255,20 @@ func _parse_property(
 		_usage:int,
 		_wide:bool,
 	) -> bool:
-	if prop == "lvl":
+	if _object is TR_Opts and prop == "lvl":
 		add_property_editor( "lvl", LevelEditor.new() )
 		return true
-	if prop == "tracy":
-		add_property_editor( "tracy", TracyEditor.new() )
+	if _is_tracy_opts( _object ) and prop == "enabled":
+		add_property_editor( "enabled", TracyEditor.new() )
 		return true
-	if prop == "tracy_pad_s":
-		add_property_editor( "tracy_pad_s", PadEditor.new() )
+	if _is_tracy_opts( _object ) and prop == "pad_s":
+		add_property_editor( "pad_s", PadEditor.new() )
 		return true
 	return false
+
+
+func _is_tracy_opts( object:Object ) -> bool:
+	if object == null:
+		return false
+	var scr:Script = object.get_script()
+	return scr != null and scr.resource_path.ends_with( "tracy_opts.gd" )

@@ -1,12 +1,12 @@
 # Test Runner
 
-This panel runs the test scripts under the tests folder and the case scripts under each cases folder. Those folders are tests_dir and cases_dirs in the project settings.
+This panel runs the case scripts under each cases folder. That list is cases_dirs in the project settings.
 
 ## Play
 
 The button reads Play while the list is idle. It starts every run checked in the menu after Reload, one run after another. An empty selection uses every row still on screen. A selection uses those rows.
 
-EditorScript runs those rows in this editor, one script at a time, and writes each result into the list. Test scripts and case scripts both run this way. During that walk the button reads Cancel. The script already running finishes, and Cancel drops the later scripts. Once pressed, the button reads Cancelling and stays inactive until the walk ends, then it reads Play again.
+EditorScript runs those rows in this editor, one script at a time, and writes each result into the list. During that walk the button reads Cancel. The script already running finishes, and Cancel drops the later scripts. Once pressed, the button reads Cancelling and stays inactive until the walk ends, then it reads Play again.
 
 Play Editor, Play template_debug, and Play template_release each start one case and wait until that game quits before the next case. Headless runs its cases in one process, one after another. Each of those runs adds a card on the right. The card names the run and the script. A script may declare `DESCRIPTION`. The card header opens to show that text. Checked runs start one after another. Outside the editor, the same button starts the editor walk directly.
 
@@ -32,7 +32,7 @@ Clears the result boxes and the row status.
 
 ## Options
 
-Opens the options resource in the Inspector. Level lists every ceiling, from Silent through Trace. Tracy and its pad stay off until the capture executable, Python, and crop scripts are set.
+Opens the options resource in the Inspector. Level lists every ceiling, from Silent through Trace. Each hook script found in the hook folders shows that hook's own settings under it.
 
 ## Rows
 

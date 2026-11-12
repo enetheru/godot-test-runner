@@ -10,16 +10,13 @@ extends VBoxContainer
 const InfoBox = preload( "uid://gli414sa5hot" )
 const TestScan = preload( "uid://dk7mscanwalk1" )
 const TestRows = preload( "uid://dk7mtestrows1" )
-const TR_Opts = preload( "uid://c3rwpcm55iy6r" )
 const Log = preload( "uid://br7jtx5cntuan" )
 const CaseMenu = preload( "uid://bmxtuig6f1i7d" )
 const TestTree = preload( "uid://dvvnrjmjouxec" )
-const TracyCapture = preload( "uid://c38qii7m273x0" )
 
 # Classes
 const TestDef = TestRows.TestDef
 const TestResult = TestRows.TestResult
-const RetCode = TR_Base.RetCode
 
 # Scenes
 const INFO_BOX = preload( "uid://dt0eqt7nuorql" )
@@ -51,23 +48,21 @@ var opts:TR_Opts
 @onready var _help_text: RichTextLabel = $PopupPanel/HelpText
 
 # List filter, the tree, and the info cards.
+@onready var _split: HSplitContainer = $TestOutput
 @onready var _list_filter: LineEdit = $TestOutput/TestList/FilterRow/Filter
 @onready var _tests_tree: TestTree = $TestOutput/TestList/TestsTree
 @onready var _info_items: VBoxContainer = $TestOutput/InfoList/ScrollContainer/InfoItems
+
+# True after the user moves the split. The exit path writes that offset.
+var _split_moved:bool = false
 
 # _ready copies opts onto these, and keeps the Run icon for the cancel swap.
 
 # Icon swapped onto the Run button while a walk can be cancelled.
 var _play_icon: Texture2D
 
-# Folder of TR_Base scripts.
-var _test_path:String = TR_Opts.DEFAULT_TESTS_DIR
-
 # Folders of TR_Case scripts.
 var _case_paths:PackedStringArray = PackedStringArray([TR_Opts.DEFAULT_CASES_DIR])
-
-# Discovery filter. Keeps test*.gd and skips generated scripts.
-var _test_script_filter:Callable = default_script_filter
 
 # Junction and symlink cycle guard. Not a UI depth limit.
 var _max_scan_depth:int = TestScan.DEFAULT_MAX_SCAN_DEPTH
@@ -76,7 +71,6 @@ var _max_scan_depth:int = TestScan.DEFAULT_MAX_SCAN_DEPTH
 var _test_lvl:int = Log.Level.DEFAULT
 
 # True when the next run should install Tracy.
-var _test_tracy:bool = false
 
 # bind_service assigns this after _ready.
 var _service:Node = null
@@ -208,12 +202,11 @@ func _on_options_pressed() -> void:
 
 
 func _on_opts_changed() -> void:
-	var prev_tests:String = _test_path
 	var prev_cases:PackedStringArray = _case_paths
 	_apply_opts()
 	if not is_node_ready():
 		return
-	if prev_tests == _test_path and prev_cases == _case_paths:
+	if prev_cases == _case_paths:
 		return
 	if is_instance_valid( _service ) and _service.has_method( &"reload" ):
 		_service.call( &"reload" )
@@ -315,10 +308,22 @@ func _ready() -> void:
 	if not _tests_tree.file_picked.is_connected( _on_file_picked ):
 		@warning_ignore( "return_value_discarded" )
 		_tests_tree.file_picked.connect( _on_file_picked )
+	if not _tests_tree.fold_changed.is_connected( _on_tree_folded ):
+		@warning_ignore( "return_value_discarded" )
+		_tests_tree.fold_changed.connect( _on_tree_folded )
+	if not _split.drag_started.is_connected( _on_split_drag_started ):
+		@warning_ignore( "return_value_discarded" )
+		_split.drag_started.connect( _on_split_drag_started )
+	if not _split.drag_ended.is_connected( _on_split_drag_ended ):
+		@warning_ignore( "return_value_discarded" )
+		_split.drag_ended.connect( _on_split_drag_ended )
+	_restore_split.call_deferred()
 	_on_reload_pressed()
 
 
 func _exit_tree() -> void:
+	if _split_moved and is_instance_valid( _split ):
+		_store_flag( &"split_offset", _split_px() )
 	if opts != null \
 	and opts.changed.is_connected( _on_opts_changed ):
 		opts.changed.disconnect( _on_opts_changed )
@@ -346,18 +351,8 @@ func set_lvl( level:int ) -> void:
 	_store_flag( &"lvl", level )
 
 
-func default_script_filter( filename:String ) -> bool:
-	return filename.begins_with("test") \
-		and filename.ends_with(".gd") \
-		and not filename.ends_with("_generated.gd")
-
-
-func collect_tests( _path:String ) -> Array[TestDef]:
-	var tree:Array[Dictionary] = TestScan.collect_test_tree(
-			_path, _max_scan_depth, _test_script_filter )
+func collect_tests() -> Array[TestDef]:
 	var tests:Array[TestDef] = []
-	for node:Dictionary in tree:
-		tests.append( _test_def_from_node( node ) )
 	var cases_branch:TestDef = _cases_branch()
 	if cases_branch != null:
 		tests.append( cases_branch )
@@ -549,41 +544,35 @@ func process_test( file_item:TreeItem ) -> void:
 	# We're only keeping around one rest result per test.
 	var result:TestResult = test_def.results.get_or_add( file_item, TestResult.new() )
 	result.latest = info_box
-	result.retcode = RetCode.TEST_FAILED
+	result.retcode = TR_CaseSession.TEST_FAILED
 	result.output = ["Only Just Created"]
 	_tests_tree.remember( script_path, TR_CaseSession.Launch.EDITORSCRIPT, TestTree.Mark.RUN )
 	_tests_tree.paint_kind( file_item, TR_CaseSession.Launch.EDITORSCRIPT )
 	_tests_tree.set_status( file_item, TestTree.Status.INPROGRESS )
 
-	# A case runs through the session. An editor-script test runs as itself.
-	var case_run:bool = TR_CaseSession.is_case_path( script_path )
-
-	# Load up the script and run the test
 	var script:GDScript = load( script_path )
 	if script == null or not script.can_instantiate():
 		result.output = ["Cannot instantiate '%s'" % script_path ]
-	elif case_run:
+	elif TR_CaseSession.is_case_path( script_path ):
 		await run_case( script, result )
 	else:
-		var instance:TR_Base = script.new()
-		if instance:
-			await run_test_base( instance, result )
+		result.output = ["Not a case: %s" % script_path ]
 
 	if Log.allows( _test_lvl, Log.Level.INFO ) \
-	or result.retcode == RetCode.TEST_FAILED:
+	or result.retcode == TR_CaseSession.TEST_FAILED:
 		info_text = "Empty" if result.output.is_empty() \
-			else result.output.reduce( TR_Base.reducer_to_lines )
+			else _join_lines( result.output )
 
 	_finish_editor( file_item, script_path, result, info_box, info_text )
 
 
-func run_test_base( instance:TR_Base, result:TestResult ) -> void:
-	_apply_opts()
-	instance.local_lvl = _test_lvl
-	@warning_ignore('redundant_await')
-	await instance.run_harness()
-	result.retcode = instance.runcode as RetCode
-	result.output = instance.output
+func _join_lines( rows:Array ) -> String:
+	var parts:PackedStringArray = PackedStringArray()
+	for row:Variant in rows:
+		if parts.append( str( row ) ):
+			push_error( "main_panel._join_lines: append failed" )
+			break
+	return "\n".join( parts )
 
 
 ## Editor host while this dock is in the editor. Play host while a game is running.
@@ -591,22 +580,19 @@ func run_case( script:GDScript, result:TestResult ) -> void:
 	_apply_opts()
 	var session := TR_CaseSession.new()
 	session.host = TR_CaseSession.Host.EDITOR if Engine.is_editor_hint() else TR_CaseSession.Host.PLAY
-	# The options flag requests a capture. Off leaves the run untraced.
-	if _test_tracy:
-		session.capture_request = 1
 	var scene_tree:SceneTree = get_tree()
 	if scene_tree == null:
-		result.retcode = RetCode.TEST_FAILED
+		result.retcode = TR_CaseSession.TEST_FAILED
 		result.output = ["No SceneTree for case"]
 		return
 	session.attach_tree( scene_tree )
 	var body:TR_Case = session.instantiate( script )
 	if body == null:
-		result.retcode = RetCode.TEST_FAILED
+		result.retcode = TR_CaseSession.TEST_FAILED
 		result.output = ["Not a case"]
 		return
 	await session.run_await( body )
-	result.retcode = session.runcode as RetCode
+	result.retcode = session.runcode
 	var rows:PackedStringArray = PackedStringArray()
 	for row:String in session.line().split( "\n" ):
 		if row == "":
@@ -635,9 +621,11 @@ func clear_results_ui() -> void:
 
 
 func regenerate_tree() -> void:
-	_test_list = collect_tests( _test_path )
+	_test_list = collect_tests()
 	_pending_rows.clear()
 	_tests_tree.rebuild( _test_list )
+	if opts != null:
+		_tests_tree.apply_folded( opts.tree_folded )
 	update_stats()
 	_apply_list_filter()
 
@@ -665,23 +653,11 @@ func _clear_stored_results( defs:Array ) -> void:
 		_clear_stored_results( test_def.children )
 
 
-## This binary registered the Profiler singleton. Stock Godot has no such name.
-func _tracy_supported() -> bool:
-	return Engine.has_singleton(&'Profiler')
-
-
-## Copy [member opts] onto the service and the Tracy hook.
+## Copy [member opts] onto the service.
 func _apply_opts() -> void:
-	_test_path = TR_Opts.tests_root()
 	_case_paths = TR_Opts.cases_roots()
 	if opts != null:
 		_test_lvl = opts.lvl
-		_test_tracy = opts.tracy
-	var capture_ready:bool = _tracy_supported() and TracyCapture.is_configured()
-	var installer:Callable = Callable()
-	if capture_ready and _test_tracy:
-		installer = Callable(TracyCapture, &"install")
-	TR_Base.prepare_run = installer
 	if is_instance_valid( _service ) \
 	and _service.has_method( &"set_lvl" ):
 		_service.call( &"set_lvl", _test_lvl )
@@ -724,6 +700,38 @@ func _md_inline( line:String ) -> String:
 		else:
 			out += parts[i]
 	return out
+
+
+func _on_tree_folded( paths:PackedStringArray ) -> void:
+	_store_flag( &"tree_folded", paths )
+
+
+func _on_split_drag_started() -> void:
+	_split_moved = true
+
+
+func _on_split_drag_ended() -> void:
+	_store_flag( &"split_offset", _split_px() )
+
+
+func _split_px() -> int:
+	if not is_instance_valid( _split ):
+		return 0
+	var offsets:PackedInt32Array = _split.split_offsets
+	if offsets.is_empty():
+		return 0
+	return offsets[ 0 ]
+
+
+func _restore_split() -> void:
+	if opts == null or opts.split_offset < 0 or not is_instance_valid( _split ):
+		return
+	var offsets:PackedInt32Array = _split.split_offsets
+	if offsets.is_empty():
+		offsets = PackedInt32Array( [ opts.split_offset ] )
+	else:
+		offsets[ 0 ] = opts.split_offset
+	_split.split_offsets = offsets
 
 
 ## Write one flag on [member opts]. The settings helper stores it.
@@ -970,7 +978,7 @@ func _card_for_case(
 	var test_def:TestDef = item.get_metadata( 0 )
 	var result:TestResult = test_def.results.get_or_add( item, TestResult.new() )
 	result.latest = info_box
-	result.retcode = RetCode.TEST_OK if passed else RetCode.TEST_FAILED
+	result.retcode = TR_CaseSession.TEST_OK if passed else TR_CaseSession.TEST_FAILED
 	result.output = []
 	if info_text != "":
 		result.output.append( info_text )
@@ -1037,7 +1045,7 @@ func _finish_editor(
 			) -> void:
 	var mark := TestTree.Mark.FAIL
 	var status := TestTree.Status.FAILED
-	if result.retcode != RetCode.TEST_FAILED:
+	if result.retcode != TR_CaseSession.TEST_FAILED:
 		if "warn" in info_text.to_lower():
 			mark = TestTree.Mark.WARN
 			status = TestTree.Status.WARNING
