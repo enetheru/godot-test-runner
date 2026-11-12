@@ -163,10 +163,12 @@ func attach_tree( scene_tree: SceneTree ) -> void:
 	clock = made
 	_note_main_scene()
 
+
 func attach_loop() -> void:
 	tree = null
 	main_scene_started = false
 	clock = LoopClockScript.new()
+
 
 func instantiate( scr: Script ) -> TR_Case:
 	var native_name: String = str( script_const( scr, "NATIVE", "" ) )
@@ -206,6 +208,7 @@ func check( ok: bool, label: String ) -> void:
 	runcode = TEST_FAILED
 	_note( label )
 
+
 func refuse( why: String, script_path: String = "" ) -> void:
 	_prepare( script_path )
 
@@ -213,6 +216,7 @@ func refuse( why: String, script_path: String = "" ) -> void:
 	reason = why
 	runcode = TEST_FAILED
 	_close()
+
 
 func run_sync( case: TR_Case ) -> void:
 	if not _open( case ):
@@ -263,6 +267,7 @@ func run_sync( case: TR_Case ) -> void:
 		runcode = TEST_FAILED
 	_finish_sync()
 
+
 func run_await( case: TR_Case ) -> void:
 	if not _open( case ):
 		return
@@ -308,6 +313,7 @@ func run_await( case: TR_Case ) -> void:
 		runcode = TEST_FAILED
 	await _finish_await()
 
+
 func line() -> String:
 	var text: String = "case status=%s runcode=%d host=%s flavour=%s hint=%s" % [
 		status, runcode, _host_name(), flavour, hint,
@@ -344,6 +350,7 @@ static func is_case_script( scr: Script ) -> bool:
 		current = current.get_base_script()
 	return false
 
+
 ## [param script_path] loads as a case script.
 static func is_case_path( script_path: String ) -> bool:
 	if not script_path.ends_with( ".gd" ) or not ResourceLoader.exists( script_path ):
@@ -354,6 +361,7 @@ static func is_case_path( script_path: String ) -> bool:
 	var scr: Script = loaded
 	return is_case_script( scr )
 
+
 ## TR_Case script file names directly inside [param folder].
 static func case_files( folder: String ) -> Array[String]:
 	var out: Array[String] = []
@@ -361,6 +369,7 @@ static func case_files( folder: String ) -> Array[String]:
 		if file_name.ends_with( ".gd" ) and is_case_path( folder.path_join( file_name ) ):
 			out.append( file_name )
 	return out
+
 
 static func case_paths() -> PackedStringArray:
 	var paths: PackedStringArray = _script_paths( OS.get_cmdline_user_args() )
@@ -372,6 +381,7 @@ static func case_paths() -> PackedStringArray:
 		return paths
 	return _script_paths( from_env.split( ";" ) )
 
+
 static func script_const( scr: Script, key: String, fallback: Variant ) -> Variant:
 	var current: Script = scr
 	while current != null:
@@ -381,12 +391,14 @@ static func script_const( scr: Script, key: String, fallback: Variant ) -> Varia
 		current = current.get_base_script()
 	return fallback
 
+
 static func script_flag( scr: Script, key: String ) -> bool:
 	var found: Variant = script_const( scr, key, false )
 	if found is bool:
 		var flag: bool = found
 		return flag
 	return false
+
 
 static func script_seconds( scr: Script, key: String, fallback: float ) -> float:
 	var found: Variant = script_const( scr, key, fallback )
@@ -425,8 +437,10 @@ static func launch_host( id: Launch ) -> Host:
 		_:
 			return Host.PLAY
 
+
 static func report_file() -> String:
 	return ProjectSettings.globalize_path( "user://case_report.txt" )
+
 
 static func clear_report() -> void:
 	var report_path: String = report_file()
@@ -435,6 +449,7 @@ static func clear_report() -> void:
 	var err: Error = DirAccess.remove_absolute( report_path )
 	if err != OK:
 		push_error( "TR_CaseSession.clear_report: %s" % error_string( err ) )
+
 
 ## Print [param text] and append it to the report. The panel builds a card from it.
 static func report( text: String ) -> void:
@@ -499,9 +514,11 @@ func _open( case: TR_Case ) -> bool:
 	budget_s = script_seconds( scr, "BUDGET_S", 5.0 )
 	return true
 
+
 func _deny( why: String ) -> bool:
 	refuse( why )
 	return false
+
 
 func _prepare( script_path: String = "" ) -> void:
 	if flavour == "":
@@ -511,9 +528,11 @@ func _prepare( script_path: String = "" ) -> void:
 		path = script_path
 	run_kind = _kind_name()
 
+
 func _configure_case( case: TR_Case ) -> void:
 	# Void, and not awaited. An override that awaits is outside this step.
 	case._configure()
+
 
 func _install_tracy() -> void:
 	if capture_request == 0 or hooks != null or tree == null:
@@ -562,6 +581,7 @@ func _pre_sync() -> bool:
 		return false
 	return true
 
+
 func _pre_await() -> bool:
 	if hooks == null:
 		return true
@@ -578,10 +598,12 @@ func _pre_await() -> bool:
 		return false
 	return true
 
+
 func _awaited() -> void:
 	status = "refused"
 	reason = "awaited without a tree"
 	runcode = TEST_FAILED
+
 
 func _post_sync() -> void:
 	if hooks == null:
@@ -597,6 +619,7 @@ func _post_sync() -> void:
 		runcode = TEST_FAILED
 		_note( "hooks.post() failed" )
 
+
 # One await, then the length. run_await cannot hold the stamp itself.
 func _timed( work: Callable ) -> Array:
 	var started: int = Time.get_ticks_msec()
@@ -605,8 +628,10 @@ func _timed( work: Callable ) -> Array:
 
 	return [ _elapsed( started ), result ]
 
+
 func _elapsed( started: int ) -> float:
 	return ( Time.get_ticks_msec() - started ) / 1000.0
+
 
 func _finish_sync() -> void:
 	_close()
@@ -614,6 +639,7 @@ func _finish_sync() -> void:
 	_post_sync()
 
 	_release_hooks()
+
 
 func _finish_await() -> void:
 	_close()
@@ -652,10 +678,12 @@ func _note( text: String ) -> void:
 	if hooks != null:
 		hooks.message( text )
 
+
 func _close() -> void:
 	if clock == null:
 		return
 	clock.stop()
+
 
 func _note_main_scene() -> void:
 	main_scene_started = false
@@ -670,12 +698,14 @@ func _note_main_scene() -> void:
 
 	main_scene_started = tree.current_scene.scene_file_path == started
 
+
 func _case_script( case: TR_Case ) -> Script:
 	var found: Variant = case.get_script()
 	if found is Script:
 		var scr: Script = found
 		return scr
 	return null
+
 
 func _read_flavour() -> String:
 	if OS.has_feature( "template_release" ):
@@ -686,6 +716,7 @@ func _read_flavour() -> String:
 		return "editor"
 	return "unknown"
 
+
 func _host_name() -> String:
 	match host:
 		Host.PLAY:
@@ -694,6 +725,7 @@ func _host_name() -> String:
 			return "script"
 		_:
 			return "editor"
+
 
 ## Token stored in the trace filename. [member flavour] splits the three play rows.
 func _kind_name() -> String:
@@ -726,6 +758,7 @@ static func _script_paths( items: PackedStringArray ) -> PackedStringArray:
 		if item.begins_with( "res://" ) and item.ends_with( ".gd" ):
 			paths = _take( paths, item )
 	return paths
+
 
 static func _take( paths: PackedStringArray, item: String ) -> PackedStringArray:
 	# append returns the Error. OK is 0, so false means the path was stored.
