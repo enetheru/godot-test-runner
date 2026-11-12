@@ -4,6 +4,7 @@
 
 [resource]
 script = ExtResource("1_opts")
+cases_dirs = PackedStringArray("res://cases/")
 python_exe = "C:/Users/nicho/AppData/Local/Programs/Python/Python314/python.exe"
 tracy_capture = "C:/git/wolfpld/tracy/capture/cmake-build-release-visual-studio/tracy-capture.exe"
 tracy_scripts = "C:/Godot/src/godot-private/misc/scripts/tracy"
